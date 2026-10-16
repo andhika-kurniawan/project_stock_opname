@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stock Opname — Wireframes Week 1</title>
+<style>
+  :root { --ink:#111; --muted:#666; --line:#d4d4d4; --bg:#f4f4f2; --card:#fff; --ok:#1b7f3a; --warn:#b45309; --bad:#b42318; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.4 ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:24px 32px 8px; }
+  h1 { margin:0 0 4px; font-size:22px; }
+  p { margin:0; color:var(--muted); }
+  h2 { margin:28px 32px 12px; font-size:16px; }
+  .row { display:flex; gap:20px; flex-wrap:wrap; padding:0 32px 32px; align-items:flex-start; }
+  .phone { width:280px; background:#111; border-radius:28px; padding:14px; }
+  .screen { background:var(--card); border-radius:18px; min-height:520px; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .web { width:640px; background:var(--card); border:1px solid var(--line); border-radius:8px; min-height:420px; display:grid; grid-template-columns:160px 1fr; }
+  .side { border-right:1px solid var(--line); padding:12px; font-size:12px; }
+  .main { padding:14px; }
+  .bar { height:36px; border:1px dashed var(--line); border-radius:8px; display:flex; align-items:center; padding:0 10px; color:var(--muted); }
+  .btn { background:#111; color:#fff; text-align:center; padding:10px; border-radius:8px; }
+  .ghost { border:1px solid var(--line); text-align:center; padding:10px; border-radius:8px; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:10px; }
+  .kpi { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th,td { border-bottom:1px solid var(--line); text-align:left; padding:6px 4px; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .label { font-size:12px; color:var(--muted); margin-top:6px; }
+  .scan { height:180px; border:1px dashed var(--line); border-radius:12px; display:grid; place-items:center; color:var(--muted); }
+  nav a { display:block; padding:6px 0; color:var(--ink); text-decoration:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Stock Opname — Wireframes</h1>
+  <p>Week 1. Low-fi. Mobile petugas + web admin. Bukan visual final.</p>
+</header>
+
+<h2>Mobile</h2>
+<div class="row">
+  <div>
+    <div class="phone"><div class="screen">
+      <strong>Masuk</strong>
+      <div class="bar">Email</div>
+      <div class="bar">Password</div>
+      <div class="btn">Masuk</div>
+    </div></div>
+    <div class="label">01 Login</div>
+  </div>
+  <div>
+    <div class="phone"><div class="screen">
+      <strong>Sesi aktif</strong>
+      <div class="card">Minuman · 32/100 · Lanjut</div>
+      <div class="card">Snack · belum mulai</div>
+      <div class="btn">Mulai SO baru</div>
+      <div class="ghost">Riwayat</div>
+    </div></div>
+    <div class="label">02 Home</div>
+  </div>
+  <div>
+    <div class="phone"><div class="screen">
+      <strong>Scan</strong>
+      <div class="scan">Kamera</div>
+      <div class="card">Pocari 500ml<br>Stok sistem: 50</div>
+      <div class="bar">Qty fisik</div>
+      <div class="btn">Simpan</div>
+      <div class="ghost">Input barcode manual</div>
+    </div></div>
+    <div class="label">03 Scan + qty</div>
+  </div>
+  <div>
+    <div class="phone"><div class="screen">
+      <strong>Review · 32/100</strong>
+      <div class="card">Pocari · 48 <span class="bad">-2</span></div>
+      <div class="card">Indomie · 120 <span class="ok">0</span></div>
+      <div class="ghost">Edit</div>
+      <div class="btn">Submit sesi</div>
+    </div></div>
+    <div class="label">04 Review</div>
+  </div>
+</div>
+
+<h2>Web admin</h2>
+<div class="row">
+  <div>
+    <div class="web">
+      <div class="side"><strong>SO</strong><nav><a>Dashboard</a><a>Master data</a><a>Sesi</a><a>Audit</a></nav></div>
+      <div class="main">
+        <strong>Dashboard</strong>
+        <div class="kpi" style="margin:10px 0">
+          <div class="card">Scan hari ini<br><strong>128</strong></div>
+          <div class="card">Sesi aktif<br><strong>2</strong></div>
+          <div class="card">Item selisih<br><strong>14</strong></div>
+          <div class="card">Nilai selisih<br><strong>Rp 1.2jt</strong></div>
+        </div>
+        <div class="card">Minuman · Andi · 32% · estimasi 2 jam</div>
+      </div>
+    </div>
+    <div class="label">05 Dashboard</div>
+  </div>
+  <div>
+    <div class="web">
+      <div class="side"><strong>SO</strong><nav><a>Dashboard</a><a>Master data</a><a>Sesi</a><a>Audit</a></nav></div>
+      <div class="main">
+        <strong>Hasil SO-20261016-0001</strong>
+        <p style="margin:6px 0 10px">Filter: Semua / Match / Selisih</p>
+        <table>
+          <tr><th>Barcode</th><th>Produk</th><th>Sistem</th><th>Fisik</th><th>Selisih</th></tr>
+          <tr><td>8991…</td><td>Pocari</td><td>50</td><td>48</td><td class="bad">-2</td></tr>
+          <tr><td>8992…</td><td>Indomie</td><td>120</td><td>120</td><td class="ok">0</td></tr>
+        </table>
+        <div class="btn" style="margin-top:12px;width:160px">Export Excel</div>
+      </div>
+    </div>
+    <div class="label">06 Perbandingan + export</div>
+  </div>
+</div>
+</body>
+</html>
