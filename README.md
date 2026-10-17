@@ -270,3 +270,4 @@ INSERT INTO products (barcode, name, category_id, system_stock) VALUES
 
 **Status**: Week 1 in progress 🚧  
 **Next Review**: 2026-10-21
+# project_stock_opname
