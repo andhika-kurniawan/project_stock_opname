@@ -1,5 +1,7 @@
 'use client'
 
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { 
   CalendarClock, 
   Package, 
@@ -13,13 +15,146 @@ import {
   AlertTriangle as AlertTriangleIcon 
 } from 'lucide-react'
 
+interface DashboardMetrics {
+  totalProducts: number
+  activeSessions: number
+  itemsWithVariance: number
+  netVariancePercent: number
+}
+
+interface RecentItem {
+  id: string
+  barcode: string
+  name: string
+  category: string
+  system_stock: number
+  physical_stock: number | null
+  variance: number | null
+  status: string
+  user: string
+  updated_at: string
+}
+
 export default function DashboardPage() {
-  const metrics = [
-    { label: 'Total Item', value: '3,840', change: '+12%', icon: Package, color: 'bg-blue-500' },
-    { label: 'Sesi SO Aktif', value: '2', change: '-1', icon: CalendarClock, color: 'bg-orange-500' },
-    { label: 'Item Selisih', value: '124', change: '+8%', icon: AlertTriangle, color: 'bg-red-500' },
-    { label: 'Net Variance', value: '-4.2%', change: '-0.8%', icon: TrendingDown, color: 'bg-purple-500' },
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    totalProducts: 0,
+    activeSessions: 0,
+    itemsWithVariance: 0,
+    netVariancePercent: 0
+  })
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
+
+  useEffect(() => {
+    fetchDashboardData()
+  }, [])
+
+  async function fetchDashboardData() {
+    const [productsRes, sessionsRes, itemsRes] = await Promise.all([
+      supabase.from('products').select('id, system_stock', { count: 'exact' }),
+      supabase.from('so_sessions').select('id', { count: 'exact' }).eq('status', 'active'),
+      supabase.from('so_items').select(`
+        id,
+        system_stock,
+        physical_stock,
+        variance,
+        is_counted,
+        updated_at,
+        products:product_id (barcode, name, categories:category_id (name)),
+        users:counted_by (full_name)
+      `).order('updated_at', { ascending: false }).limit(5)
+    ])
+
+    const totalProducts = productsRes.count || 0
+    const activeSessions = sessionsRes.count || 0
+
+    let itemsWithVariance = 0
+    let totalVariance = 0
+    let totalSystemStock = 0
+
+    if (itemsRes.data) {
+      itemsRes.data.forEach((item: any) => {
+        if (item.variance !== null && item.variance !== 0) {
+          itemsWithVariance++
+        }
+        if (item.variance !== null) {
+          totalVariance += item.variance
+          totalSystemStock += item.system_stock
+        }
+      })
+    }
+
+    const netVariancePercent = totalSystemStock > 0 
+      ? ((totalVariance / totalSystemStock) * 100) 
+      : 0
+
+    setMetrics({
+      totalProducts,
+      activeSessions,
+      itemsWithVariance,
+      netVariancePercent
+    })
+
+    if (itemsRes.data) {
+      setRecentItems(itemsRes.data.map((item: any) => ({
+        id: item.id,
+        barcode: item.products?.barcode || '-',
+        name: item.products?.name || '-',
+        category: item.products?.categories?.name || '-',
+        system_stock: item.system_stock,
+        physical_stock: item.physical_stock,
+        variance: item.variance,
+        status: item.variance === null ? 'Belum scan' : item.variance === 0 ? 'Cocok' : item.variance > 0 ? 'Surplus' : 'Deficit',
+        user: item.users?.full_name || '-',
+        updated_at: item.updated_at
+      })))
+    }
+
+    setLoading(false)
+  }
+
+  const metricCards = [
+    { 
+      label: 'Total Item', 
+      value: metrics.totalProducts.toLocaleString(), 
+      change: '+12%', 
+      icon: Package, 
+      color: 'bg-blue-500' 
+    },
+    { 
+      label: 'Sesi SO Aktif', 
+      value: metrics.activeSessions.toString(), 
+      change: '-1', 
+      icon: CalendarClock, 
+      color: 'bg-orange-500' 
+    },
+    { 
+      label: 'Item Selisih', 
+      value: metrics.itemsWithVariance.toString(), 
+      change: '+8%', 
+      icon: AlertTriangle, 
+      color: 'bg-red-500' 
+    },
+    { 
+      label: 'Net Variance', 
+      value: `${metrics.netVariancePercent.toFixed(1)}%`, 
+      change: '-0.8%', 
+      icon: TrendingDown, 
+      color: 'bg-purple-500' 
+    },
   ]
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#FF6B35] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Memuat dashboard...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -40,16 +175,12 @@ export default function DashboardPage() {
             <span>Filter Periode</span>
             <ChevronDown className="w-4 h-4" />
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-[#FF6B35] text-white rounded-xl hover:bg-[#FF4D1A]">
-            <Plus className="w-4 h-4" />
-            Sesi Baru
-          </button>
         </div>
       </div>
 
       {/* Metric cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {metrics.map((metric) => {
+        {metricCards.map((metric) => {
           const Icon = metric.icon
           const isPositive = metric.change.startsWith('+')
           return (
@@ -144,8 +275,8 @@ export default function DashboardPage() {
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Daftar Audit SKU</h3>
-              <p className="text-gray-500 text-sm">3.840 item • Terakhir diupdate 17/10/2024 14:30</p>
+              <h3 className="text-lg font-semibold text-gray-900">Daftar Audit SKU Terbaru</h3>
+              <p className="text-gray-500 text-sm">{recentItems.length} item terbaru • Data real-time</p>
             </div>
             <div className="flex items-center gap-3">
               <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -163,65 +294,64 @@ export default function DashboardPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Barcode</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Produk</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kategori</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stok Sistem</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fisik</th>
-                <th className="px6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Selisih</th>
-                <th className="px6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Petugas</th>
-                <th className="px6 py3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Selisih</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Petugas</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {[
-                { sku: 'SKU-001', name: 'Speaker BT JBL Go', system: 45, physical: 45, diff: 0, status: 'Cocok', user: 'Andi' },
-                { sku: 'SKU-002', name: 'Mouse Wireless Logitech', system: 32, physical: 30, diff: -2, status: 'Deficit', user: 'Budi' },
-                { sku: 'SKU-003', name: 'Kabel USB-C 2m', system: 150, physical: 152, diff: +2, status: 'Surplus', user: 'Cici' },
-                { sku: 'SKU-004', name: 'Powerbank 20.000 mAh', system: 28, physical: 28, diff: 0, status: 'Cocok', user: 'Dedi' },
-                { sku: 'SKU-005', name: 'Headphone Gaming', system: 19, physical: 18, diff: -1, status: 'Deficit', user: 'Eva' },
-              ].map((item) => (
-                <tr key={item.sku} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{item.sku}</td>
-                  <td className="px-6 py-4">{item.name}</td>
-                  <td className="px-6 py-4">{item.system}</td>
-                  <td className="px-6 py-4">{item.physical}</td>
-                  <td className={`px-6 py-4 font-medium ${item.diff === 0 ? 'text-gray-900' : item.diff > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {item.diff > 0 ? '+' : ''}{item.diff}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                      item.status === 'Cocok' ? 'bg-green-100 text-green-800' :
-                      item.status === 'Deficit' ? 'bg-red-100 text-red-800' :
-                      'bg-blue-100 text-blue-800'
-                    }`}>
-                      {item.status === 'Cocok' ? <CheckCircle className="w-3 h-3 mr-1" /> : <AlertTriangleIcon className="w-3 h-3 mr-1" />}
-                      {item.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-gray-600">{item.user}</td>
-                  <td className="px-6 py-4">
-                    <button className="text-[#FF6B35] hover:text-[#FF4D1A] text-sm font-medium">
-                      Edit
-                    </button>
+              {recentItems.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                    Belum ada data audit SKU
                   </td>
                 </tr>
-              ))}
+              ) : (
+                recentItems.map((item) => (
+                  <tr key={item.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap font-mono text-sm">{item.barcode}</td>
+                    <td className="px-6 py-4">{item.name}</td>
+                    <td className="px-6 py-4">{item.category}</td>
+                    <td className="px-6 py-4 text-center">{item.system_stock}</td>
+                    <td className="px-6 py-4 text-center">
+                      {item.physical_stock !== null ? item.physical_stock : '-'}
+                    </td>
+                    <td className={`px-6 py-4 text-center font-medium ${
+                      item.variance === null ? 'text-gray-400' :
+                      item.variance === 0 ? 'text-gray-900' : 
+                      item.variance > 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {item.variance !== null ? (item.variance > 0 ? `+${item.variance}` : item.variance) : '-'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                        item.status === 'Cocok' ? 'bg-green-100 text-green-800' :
+                        item.status === 'Deficit' ? 'bg-red-100 text-red-800' :
+                        item.status === 'Surplus' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {item.status === 'Cocok' ? <CheckCircle className="w-3 h-3 mr-1" /> : 
+                         item.status === 'Belum scan' ? null :
+                         <AlertTriangleIcon className="w-3 h-3 mr-1" />}
+                        {item.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-gray-600">{item.user}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
         <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
           <div className="text-sm text-gray-500">
-            Menampilkan 5 dari 3.840 item
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">←</button>
-            <span className="px-3 py-1 bg-[#FF6B35] text-white rounded">1</span>
-            <button className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">2</button>
-            <button className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">3</button>
-            <button className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">...</button>
-            <button className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">→</button>
+            Menampilkan {recentItems.length} item terbaru
           </div>
         </div>
       </div>

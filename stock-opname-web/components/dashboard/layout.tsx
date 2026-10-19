@@ -32,7 +32,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard Overview', href: '/dashboard' },
     { icon: CalendarClock, label: 'Sesi SO Aktif', href: '/dashboard/sessions' },
-    { icon: FileText, label: 'Rekap & Laporan', href: '/dashboard/reports' },
+    { icon: FileText, label: 'Rekapitulasi & Laporan', href: '/dashboard/reports' },
     { icon: Package, label: 'Master Stok', href: '/dashboard/products' },
     { icon: Users, label: 'Manajemen Petugas', href: '/dashboard/users' },
     { icon: History, label: 'Riwayat', href: '/dashboard/audit-logs' },
