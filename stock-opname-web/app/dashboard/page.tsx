@@ -35,7 +35,18 @@ interface RecentItem {
   updated_at: string
 }
 
-export default function DashboardPage() {
+import DashboardLayout from '@/components/dashboard/layout'
+
+export default function DashboardOverviewPage() {
+  return (
+    <DashboardLayout>
+      <DashboardContent />
+    </DashboardLayout>
+  )
+}
+
+function DashboardContent() {
+  // ... existing code ...
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalProducts: 0,
     activeSessions: 0,
@@ -355,6 +366,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-    </>
+    </DashboardLayout>
   )
 }

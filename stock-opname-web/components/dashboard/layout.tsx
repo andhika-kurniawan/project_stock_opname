@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { 
@@ -15,9 +15,7 @@ import {
   Search,
   Bell,
   ChevronDown,
-  TrendingUp,
   TrendingDown,
-  CheckCircle,
   AlertTriangle,
   Plus
 } from 'lucide-react'
@@ -28,6 +26,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const [userProfile, setUserProfile] = useState<{ full_name: string; role: string; email: string } | null>(null)
+
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data } = await supabase
+          .from('users')
+          .select('full_name, role, email')
+          .eq('id', user.id)
+          .single()
+        if (data) setUserProfile(data)
+      }
+    }
+    loadUser()
+  }, [supabase])
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard Overview', href: '/dashboard' },
@@ -41,21 +55,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   async function handleLogout() {
     await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+    window.location.href = '/login'
   }
 
-  const metrics = [
-    { label: 'Total Item', value: '3,840', change: '+12%', icon: Package, color: 'bg-blue-500' },
-    { label: 'Sesi SO Aktif', value: '2', change: '-1', icon: CalendarClock, color: 'bg-orange-500' },
-    { label: 'Item Selisih', value: '124', change: '+8%', icon: AlertTriangle, color: 'bg-red-500' },
-    { label: 'Net Variance', value: '-4.2%', change: '-0.8%', icon: TrendingDown, color: 'bg-purple-500' },
-  ]
+  const initials = userProfile?.full_name 
+    ? userProfile.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    : 'U'
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Sidebar */}
-      <div className="hidden md:flex flex-col w-64 bg-white border-r border-gray-200">
+      <div className="hidden md:flex flex-col w-64 bg-white border-r border-gray-200 shrink-0 min-h-screen">
         <div className="p-6">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 bg-[#FF6B35] rounded-lg flex items-center justify-center">
@@ -68,7 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        <nav className="flex-1 px-4">
+        <nav className="flex-1 px-4 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
@@ -89,10 +99,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 bg-white">
           <button
             onClick={handleLogout}
-            className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-medium transition-colors"
+            className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-medium transition-colors cursor-pointer"
           >
             <LogOut className="w-5 h-5" />
             Keluar Sesi
@@ -111,7 +121,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <input
                   type="search"
                   placeholder="Cari SKU, produk, atau sesi..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF6B35] focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF6B35] focus:border-transparent text-gray-900"
                 />
               </div>
             </div>
@@ -129,11 +139,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-[#FF6B35] rounded-full flex items-center justify-center text-white font-semibold">
-                  AR
+                  {initials}
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-900">Aditya R.</p>
-                  <p className="text-sm text-gray-500">Manager Ops</p>
+                  <p className="font-semibold text-gray-900">{userProfile?.full_name || 'Memuat...'}</p>
+                  <p className="text-sm text-gray-500 capitalize">{userProfile?.role || '-'}</p>
                 </div>
                 <ChevronDown className="w-5 h-5 text-gray-400" />
               </div>
