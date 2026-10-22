@@ -135,118 +135,131 @@ ALTER TABLE so_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE so_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
+-- Role lookup must bypass RLS. A policy on users that SELECTs users
+-- re-enters the same policy and Postgres raises 42P17.
+CREATE SCHEMA IF NOT EXISTS private;
+
+CREATE OR REPLACE FUNCTION private.is_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = (SELECT auth.uid()) AND role = 'admin'
+  );
+$$;
+
+REVOKE ALL ON FUNCTION private.is_admin() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.is_admin() TO authenticated;
+
 -- USERS POLICIES
 CREATE POLICY "Users can view their own profile" ON users
-  FOR SELECT USING (auth.uid()::text = id::text);
+  FOR SELECT USING ((SELECT auth.uid()) = id);
 
 CREATE POLICY "Admins can view all users" ON users
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-    )
-  );
+  FOR SELECT USING ((SELECT private.is_admin()));
 
 CREATE POLICY "Users can update their own profile" ON users
-  FOR UPDATE USING (auth.uid()::text = id::text);
+  FOR UPDATE TO authenticated
+  USING ((SELECT auth.uid()) = id)
+  WITH CHECK ((SELECT auth.uid()) = id);
 
 -- CATEGORIES POLICIES
 CREATE POLICY "Categories are readable by all authenticated users" ON categories
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT TO authenticated
+  USING (true);
 
 CREATE POLICY "Only admins can insert categories" ON categories
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-    )
-  );
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT private.is_admin()));
 
 CREATE POLICY "Only admins can update categories" ON categories
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-    )
-  );
+  FOR UPDATE TO authenticated
+  USING ((SELECT private.is_admin()))
+  WITH CHECK ((SELECT private.is_admin()));
 
 -- PRODUCTS POLICIES
 CREATE POLICY "Products are readable by all authenticated users" ON products
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT TO authenticated
+  USING (true);
 
 CREATE POLICY "Only admins can insert products" ON products
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-    )
-  );
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT private.is_admin()));
 
 CREATE POLICY "Only admins can update products" ON products
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-    )
-  );
+  FOR UPDATE TO authenticated
+  USING ((SELECT private.is_admin()))
+  WITH CHECK ((SELECT private.is_admin()));
 
 -- SO_SESSIONS POLICIES
 CREATE POLICY "Sessions are readable by owner or admin" ON so_sessions
-  FOR SELECT USING (
-    auth.uid()::text = user_id::text OR
-    EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-    )
+  FOR SELECT TO authenticated
+  USING (
+    (SELECT auth.uid()) = user_id OR (SELECT private.is_admin())
   );
 
 CREATE POLICY "Staff can create sessions" ON so_sessions
-  FOR INSERT WITH CHECK (auth.uid()::text = user_id::text);
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT auth.uid()) = user_id);
 
 CREATE POLICY "Staff can update their own sessions" ON so_sessions
-  FOR UPDATE USING (auth.uid()::text = user_id::text);
+  FOR UPDATE TO authenticated
+  USING ((SELECT auth.uid()) = user_id)
+  WITH CHECK ((SELECT auth.uid()) = user_id);
 
 CREATE POLICY "Admins can update any session" ON so_sessions
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-    )
-  );
+  FOR UPDATE TO authenticated
+  USING ((SELECT private.is_admin()))
+  WITH CHECK ((SELECT private.is_admin()));
 
 -- SO_ITEMS POLICIES
 CREATE POLICY "Items are readable with session access" ON so_items
-  FOR SELECT USING (
+  FOR SELECT TO authenticated
+  USING (
     EXISTS (
-      SELECT 1 FROM so_sessions 
+      SELECT 1 FROM so_sessions
       WHERE id = so_items.session_id AND (
-        auth.uid()::text = user_id::text OR
-        EXISTS (
-          SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-        )
+        (SELECT auth.uid()) = user_id OR (SELECT private.is_admin())
       )
     )
   );
 
 CREATE POLICY "Items can be inserted by session owner" ON so_items
-  FOR INSERT WITH CHECK (
+  FOR INSERT TO authenticated
+  WITH CHECK (
     EXISTS (
-      SELECT 1 FROM so_sessions 
-      WHERE id = so_items.session_id AND auth.uid()::text = user_id::text
+      SELECT 1 FROM so_sessions
+      WHERE id = so_items.session_id AND (SELECT auth.uid()) = user_id
     )
   );
 
 CREATE POLICY "Items can be updated by session owner" ON so_items
-  FOR UPDATE USING (
+  FOR UPDATE TO authenticated
+  USING (
     EXISTS (
-      SELECT 1 FROM so_sessions 
-      WHERE id = so_items.session_id AND auth.uid()::text = user_id::text
+      SELECT 1 FROM so_sessions
+      WHERE id = so_items.session_id AND (SELECT auth.uid()) = user_id
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM so_sessions
+      WHERE id = so_items.session_id AND (SELECT auth.uid()) = user_id
     )
   );
 
 -- AUDIT_LOGS POLICIES
 CREATE POLICY "Audit logs are readable by admins" ON audit_logs
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid()::text::uuid AND role = 'admin'
-    )
-  );
+  FOR SELECT TO authenticated
+  USING ((SELECT private.is_admin()));
 
 CREATE POLICY "Audit logs can be inserted by system" ON audit_logs
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT TO authenticated
+  WITH CHECK (true);
 
 -- ============================================================
 -- TRIGGERS FOR AUDIT LOGGING

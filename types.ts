@@ -73,7 +73,9 @@ export interface Database {
           id: string
           barcode: string
           name: string
+          brand: string | null
           category_id: string
+          shelf_location: string | null
           system_stock: number
           last_updated: string
           created_at: string
@@ -83,7 +85,9 @@ export interface Database {
           id?: string
           barcode: string
           name: string
+          brand?: string | null
           category_id: string
+          shelf_location?: string | null
           system_stock?: number
           last_updated?: string
           created_at?: string
@@ -93,7 +97,9 @@ export interface Database {
           id?: string
           barcode?: string
           name?: string
+          brand?: string | null
           category_id?: string
+          shelf_location?: string | null
           system_stock?: number
           last_updated?: string
           updated_at?: string
@@ -305,7 +311,9 @@ export interface SessionProgressResponse {
 export interface ImportProductDTO {
   barcode: string
   name: string
+  brand?: string
   category_name: string
+  shelf_location?: string
   system_stock: number
 }
 

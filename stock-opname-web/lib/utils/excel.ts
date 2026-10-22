@@ -9,9 +9,10 @@ export async function generateProductImportTemplate(): Promise<Blob> {
     { header: 'No', key: 'no', width: 5 },
     { header: 'Barcode', key: 'barcode', width: 20 },
     { header: 'Nama Produk', key: 'name', width: 40 },
+    { header: 'Brand', key: 'brand', width: 20 },
     { header: 'Kategori', key: 'category', width: 20 },
+    { header: 'Lokasi Rak', key: 'shelf_location', width: 15 },
     { header: 'Stok Sistem', key: 'system_stock', width: 15 },
-    { header: 'Catatan', key: 'notes', width: 30 },
   ]
 
   const headerRow = worksheet.getRow(1)
@@ -25,9 +26,9 @@ export async function generateProductImportTemplate(): Promise<Blob> {
   headerRow.height = 30
 
   const sampleData = [
-    { no: 1, barcode: '8991002001015', name: 'Pocari Sweat 500ml', category: 'Beverages', system_stock: 50, notes: '' },
-    { no: 2, barcode: '8992761234567', name: 'Indomie Goreng', category: 'Snacks', system_stock: 120, notes: '' },
-    { no: 3, barcode: '8993456789012', name: 'Samsung USB Cable', category: 'Electronics', system_stock: 30, notes: '' },
+    { no: 1, barcode: '8991002001015', name: 'Pocari Sweat 500ml', brand: 'Otsuka', category: 'Beverages', shelf_location: 'A1-01', system_stock: 50 },
+    { no: 2, barcode: '8992761234567', name: 'Indomie Goreng', brand: 'Indofood', category: 'Snacks', shelf_location: 'B2-04', system_stock: 120 },
+    { no: 3, barcode: '8993456789012', name: 'Samsung USB Cable', brand: 'Samsung', category: 'Electronics', shelf_location: 'C3-12', system_stock: 30 },
   ]
 
   worksheet.addRows(sampleData)
@@ -184,14 +185,18 @@ export async function parseImportFile(file: File): Promise<any[]> {
     if (rowNumber > 1) {
       const barcode = row.getCell(2).value?.toString().trim()
       const name = row.getCell(3).value?.toString().trim()
-      const category = row.getCell(4).value?.toString().trim()
-      const systemStock = parseInt(row.getCell(5).value?.toString() || '0', 10)
+      const brand = row.getCell(4).value?.toString().trim()
+      const category = row.getCell(5).value?.toString().trim()
+      const shelfLocation = row.getCell(6).value?.toString().trim()
+      const systemStock = parseInt(row.getCell(7).value?.toString() || '0', 10)
 
       if (barcode && name && category) {
         data.push({
           barcode,
           name,
+          brand,
           category_name: category,
+          shelf_location: shelfLocation,
           system_stock: systemStock || 0,
         })
       }

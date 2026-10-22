@@ -12,8 +12,7 @@ export default function Navbar({ user }: { user: User }) {
 
   async function handleLogout() {
     await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+    window.location.href = '/login'
   }
 
   const navItems = [
