@@ -12,7 +12,6 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
-  const [role, setRole] = useState<'admin' | 'staff'>('admin')
   const router = useRouter()
   const supabase = createClient()
 
@@ -32,16 +31,6 @@ export default function LoginPage() {
     } else {
       router.push('/dashboard')
       router.refresh()
-    }
-  }
-
-  function fillDemo(demoRole: 'admin' | 'staff') {
-    if (demoRole === 'admin') {
-      setEmail('admin@retail.co.id')
-      setPassword('demo-password')
-    } else {
-      setEmail('petugas@retail.co.id')
-      setPassword('demo-password')
     }
   }
 
@@ -70,41 +59,14 @@ export default function LoginPage() {
 
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-1">Masuk ke Akun</h2>
-            <p className="text-gray-500 text-sm">Silakan masukkan detail akun Anda</p>
-          </div>
-
-          <div className="flex gap-2 mb-6">
-            <button
-              type="button"
-              onClick={() => setRole('admin')}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all ${
-                role === 'admin'
-                  ? 'bg-[#FF6B35] text-white shadow-lg shadow-orange-500/30'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              <Shield className="w-4 h-4" />
-              Administrator
-            </button>
-            <button
-              type="button"
-              onClick={() => setRole('staff')}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all ${
-                role === 'staff'
-                  ? 'bg-[#FF6B35] text-white shadow-lg shadow-orange-500/30'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              <Clipboard className="w-4 h-4" />
-              Petugas SO
-            </button>
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">Masuk ke Dashboard</h2>
+            <p className="text-gray-500 text-sm">Silakan masukkan detail akun administrator Anda</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email / Username
+                Email
               </label>
               <input
                 id="email"
@@ -170,41 +132,6 @@ export default function LoginPage() {
               <span>→</span>
             </button>
           </form>
-
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-gray-500 font-medium">AKSES UJI COBA CEPAT (PRD DEMO)</p>
-              <Shield className="w-4 h-4 text-gray-400" />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => fillDemo('admin')}
-                className="flex items-start gap-2 p-3 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 transition-colors text-left"
-              >
-                <div className="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Shield className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-900">Admin Retail</p>
-                  <p className="text-xs text-gray-500">Manager</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillDemo('staff')}
-                className="flex items-start gap-2 p-3 bg-green-50 hover:bg-green-100 rounded-lg border border-green-200 transition-colors text-left"
-              >
-                <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Clipboard className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-900">Petugas SO</p>
-                  <p className="text-xs text-gray-500">Scanner Hub</p>
-                </div>
-              </button>
-            </div>
-          </div>
         </div>
 
         <p className="text-center text-white text-sm mt-6">

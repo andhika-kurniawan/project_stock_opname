@@ -1,0 +1,183 @@
+[
+  {
+    "id": "adt-001",
+    "timestamp": "2026-10-15T14:22:10+07:00",
+    "formatted_time": "15 Okt 2026 14:22:10 WIB",
+    "user_name": "Aditya R.",
+    "user_email": "aditya.admin@stockify.ops",
+    "user_role": "Admin / Manager Ops",
+    "action": "SESSION_APPROVED",
+    "action_label": "Approval & Penutupan Sesi SO",
+    "entity_type": "SO_SESSION",
+    "entity_id": "SO-2026-CAT06",
+    "before_value": {
+      "status": "active",
+      "approval": "pending"
+    },
+    "after_value": {
+      "status": "completed",
+      "approval": "approved",
+      "closed_at": "2026-10-15T14:22:10Z"
+    },
+    "ip_address": "192.168.1.105",
+    "user_agent": "Stockify Web Console / Chrome 129.0 macOS",
+    "status": "SUCCESS"
+  },
+  {
+    "id": "adt-002",
+    "timestamp": "2026-10-15T11:45:00+07:00",
+    "formatted_time": "15 Okt 2026 11:45:00 WIB",
+    "user_name": "Aditya R.",
+    "user_email": "aditya.admin@stockify.ops",
+    "user_role": "Admin / Manager Ops",
+    "action": "REPORT_EXPORTED",
+    "action_label": "Export Laporan Rekonsiliasi (.xlsx)",
+    "entity_type": "REPORT",
+    "entity_id": "SO-2026-CAT03",
+    "before_value": null,
+    "after_value": {
+      "format": "xlsx",
+      "rows_count": 100,
+      "session_code": "SO-2026-CAT03"
+    },
+    "ip_address": "192.168.1.105",
+    "user_agent": "Stockify Web Console / Chrome 129.0 macOS",
+    "status": "SUCCESS"
+  },
+  {
+    "id": "adt-003",
+    "timestamp": "2026-10-14T11:20:00+07:00",
+    "formatted_time": "14 Okt 2026 11:20:00 WIB",
+    "user_name": "Dewi Lestari",
+    "user_email": "dewi.lestari@stockify.ops",
+    "user_role": "Petugas SO",
+    "action": "SESSION_COMPLETED",
+    "action_label": "Penyelesaian Sesi Hitung Fisik",
+    "entity_type": "SO_SESSION",
+    "entity_id": "SO-2026-CAT06",
+    "before_value": {
+      "status": "active",
+      "counted_items": 99
+    },
+    "after_value": {
+      "status": "completed",
+      "counted_items": 100,
+      "total_units": 1842
+    },
+    "ip_address": "192.168.1.144",
+    "user_agent": "Stockify Mobile App v2.4 (Android Zebra TC26)",
+    "status": "SUCCESS"
+  },
+  {
+    "id": "adt-004",
+    "timestamp": "2026-10-13T15:45:00+07:00",
+    "formatted_time": "13 Okt 2026 15:45:00 WIB",
+    "user_name": "Aditya R.",
+    "user_email": "aditya.admin@stockify.ops",
+    "user_role": "Admin / Manager Ops",
+    "action": "STOCK_RECONCILED",
+    "action_label": "Rekonsiliasi Selisih Stok (Write-off Defisit)",
+    "entity_type": "SO_SESSION",
+    "entity_id": "SO-2026-CAT03",
+    "before_value": {
+      "status": "completed",
+      "variance_units": -3,
+      "financial_impact": -45000
+    },
+    "after_value": {
+      "status": "reconciled",
+      "notes": "Disetujui berita acara selisih 3 pcs"
+    },
+    "ip_address": "192.168.1.105",
+    "user_agent": "Stockify Web Console / Chrome 129.0 macOS",
+    "status": "SUCCESS"
+  },
+  {
+    "id": "adt-005",
+    "timestamp": "2026-10-13T13:42:15+07:00",
+    "formatted_time": "13 Okt 2026 13:42:15 WIB",
+    "user_name": "Rizky F.",
+    "user_email": "rizky.firmansyah@stockify.ops",
+    "user_role": "Petugas SO",
+    "action": "ITEM_SCANNED",
+    "action_label": "Input Fisik Produk SKU 8992761234601",
+    "entity_type": "SO_ITEM",
+    "entity_id": "8992761234601",
+    "before_value": {
+      "physical_stock": null,
+      "is_counted": false
+    },
+    "after_value": {
+      "physical_stock": 78,
+      "system_stock": 80,
+      "variance": -2
+    },
+    "ip_address": "192.168.1.140",
+    "user_agent": "Stockify Mobile App v2.4 (Android Zebra TC21)",
+    "status": "WARNING"
+  },
+  {
+    "id": "adt-006",
+    "timestamp": "2026-10-12T10:15:30+07:00",
+    "formatted_time": "12 Okt 2026 10:15:30 WIB",
+    "user_name": "Anita W.",
+    "user_email": "anita.wijaya@stockify.ops",
+    "user_role": "Petugas SO",
+    "action": "SESSION_COMPLETED",
+    "action_label": "Penyelesaian Sesi Hitung Fisik Sembako",
+    "entity_type": "SO_SESSION",
+    "entity_id": "SO-2026-CAT01",
+    "before_value": {
+      "status": "active"
+    },
+    "after_value": {
+      "status": "completed",
+      "total_items": 100,
+      "variance": 0
+    },
+    "ip_address": "192.168.1.142",
+    "user_agent": "Stockify Mobile App v2.4 (Android Zebra TC21)",
+    "status": "SUCCESS"
+  },
+  {
+    "id": "adt-007",
+    "timestamp": "2026-10-12T08:00:00+07:00",
+    "formatted_time": "12 Okt 2026 08:00:00 WIB",
+    "user_name": "Aditya R.",
+    "user_email": "aditya.admin@stockify.ops",
+    "user_role": "Admin / Manager Ops",
+    "action": "SESSION_CREATED",
+    "action_label": "Pembuatan Sesi SO Baru (Zona A)",
+    "entity_type": "SO_SESSION",
+    "entity_id": "SO-2026-CAT01",
+    "before_value": null,
+    "after_value": {
+      "session_code": "SO-2026-CAT01",
+      "category": "Sembako & Minyak Goreng",
+      "officer": "Anita W."
+    },
+    "ip_address": "192.168.1.105",
+    "user_agent": "Stockify Web Console / Chrome 129.0 macOS",
+    "status": "SUCCESS"
+  },
+  {
+    "id": "adt-008",
+    "timestamp": "2026-10-12T07:45:10+07:00",
+    "formatted_time": "12 Okt 2026 07:45:10 WIB",
+    "user_name": "Anita W.",
+    "user_email": "anita.wijaya@stockify.ops",
+    "user_role": "Petugas SO",
+    "action": "USER_LOGIN",
+    "action_label": "Login Autentikasi Pengguna",
+    "entity_type": "USER",
+    "entity_id": "user-002",
+    "before_value": null,
+    "after_value": {
+      "login_method": "password",
+      "device": "Handheld 02"
+    },
+    "ip_address": "192.168.1.142",
+    "user_agent": "Stockify Mobile App v2.4 (Android Zebra TC21)",
+    "status": "SUCCESS"
+  }
+]

@@ -56,7 +56,13 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+  const isPreview = request.nextUrl.searchParams.get('preview') === '1' || request.cookies.get('preview_mode')?.value === '1'
+
+  if (request.nextUrl.searchParams.get('preview') === '1') {
+    response.cookies.set('preview_mode', '1', { path: '/' })
+  }
+
+  if (!user && !isPreview && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/api')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

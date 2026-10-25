@@ -35,14 +35,8 @@ interface RecentItem {
   updated_at: string
 }
 
-import DashboardLayout from '@/components/dashboard/layout'
-
 export default function DashboardOverviewPage() {
-  return (
-    <DashboardLayout>
-      <DashboardContent />
-    </DashboardLayout>
-  )
+  return <DashboardContent />
 }
 
 function DashboardContent() {
@@ -366,6 +360,6 @@ function DashboardContent() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </>
   )
 }

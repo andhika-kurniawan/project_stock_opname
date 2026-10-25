@@ -1,0 +1,142 @@
+[
+  {
+    "id": "log-1792913547723",
+    "time_display": "14.32 WIB",
+    "timestamp": "2026-10-25T07:32:27.723Z",
+    "officer_name": "Aditya R.",
+    "officer_avatar": "",
+    "action": "Hapus Akses Petugas",
+    "category_rack": "Siti Maryam",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-1792913542831",
+    "time_display": "14.32 WIB",
+    "timestamp": "2026-10-25T07:32:22.830Z",
+    "officer_name": "Aditya R.",
+    "officer_avatar": "",
+    "action": "Hapus Akses Petugas",
+    "category_rack": "Budi Santoso",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-1792913537278",
+    "time_display": "14.32 WIB",
+    "timestamp": "2026-10-25T07:32:17.277Z",
+    "officer_name": "Aditya R.",
+    "officer_avatar": "",
+    "action": "Hapus Akses Petugas",
+    "category_rack": "Anita Wijaya",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-1792913531343",
+    "time_display": "14.32 WIB",
+    "timestamp": "2026-10-25T07:32:11.342Z",
+    "officer_name": "Aditya R.",
+    "officer_avatar": "",
+    "action": "Hapus Akses Petugas",
+    "category_rack": "Rizky Firmansyah",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-1792913247798",
+    "time_display": "14.27 WIB",
+    "timestamp": "2026-10-25T07:27:27.798Z",
+    "officer_name": "Aditya R.",
+    "officer_avatar": "",
+    "action": "Pembaruan Akses Petugas",
+    "category_rack": "Budi Santoso (Petugas SO)",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-1792913242018",
+    "time_display": "14.27 WIB",
+    "timestamp": "2026-10-25T07:27:22.018Z",
+    "officer_name": "Aditya R.",
+    "officer_avatar": "",
+    "action": "Pembaruan Akses Petugas",
+    "category_rack": "Budi Santoso (Petugas SO)",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-1",
+    "time_display": "09:05 WIB",
+    "timestamp": "2026-10-25T07:16:34.693Z",
+    "officer_name": "Siti Maryam",
+    "officer_avatar": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
+    "action": "Mulai Sesi Pemindaian",
+    "category_rack": "Dairy & Chiller",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-2",
+    "time_display": "08:35 WIB",
+    "timestamp": "2026-10-25T07:16:34.693Z",
+    "officer_name": "Budi Santoso",
+    "officer_avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+    "action": "Mulai Sesi Pemindaian",
+    "category_rack": "Snack & Biskuit Kering",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-3",
+    "time_display": "08:20 WIB",
+    "timestamp": "2026-10-25T07:16:34.693Z",
+    "officer_name": "Anita Wijaya",
+    "officer_avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
+    "action": "Login Autentikasi",
+    "category_rack": "Dashboard Utama",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-4",
+    "time_display": "08:15 WIB",
+    "timestamp": "2026-10-25T07:16:34.693Z",
+    "officer_name": "Rizky Firmansyah",
+    "officer_avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+    "action": "Mulai Sesi Pemindaian",
+    "category_rack": "Makanan & Minuman",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-5",
+    "time_display": "07:55 WIB",
+    "timestamp": "2026-10-25T07:16:34.693Z",
+    "officer_name": "Aditya R.",
+    "officer_avatar": "",
+    "action": "Buka Batch SO",
+    "category_rack": "BATCH-SO-FEB26",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-6",
+    "time_display": "07:40 WIB",
+    "timestamp": "2026-10-25T07:16:34.693Z",
+    "officer_name": "Rizky Firmansyah",
+    "officer_avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+    "action": "Login Autentikasi",
+    "category_rack": "Mobile App Device 01",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-7",
+    "time_display": "07:30 WIB",
+    "timestamp": "2026-10-25T07:16:34.693Z",
+    "officer_name": "Budi Santoso",
+    "officer_avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+    "action": "Sinkronisasi Master Stok",
+    "category_rack": "Server Pusat",
+    "status": "Sukses"
+  },
+  {
+    "id": "log-8",
+    "time_display": "07:15 WIB",
+    "timestamp": "2026-10-25T07:16:34.693Z",
+    "officer_name": "Siti Maryam",
+    "officer_avatar": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
+    "action": "Login Autentikasi",
+    "category_rack": "Mobile App Device 03",
+    "status": "Sukses"
+  }
+]

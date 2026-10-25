@@ -1,0 +1,17 @@
+[
+  {
+    "id": "user-005",
+    "full_name": "Aditya R.",
+    "username": "aditya.admin",
+    "email": "aditya.admin@stockify.ops",
+    "role": "admin",
+    "is_active": true,
+    "assigned_zone": "Akses Penuh Manajemen",
+    "daily_scan_count": 0,
+    "session_remaining": "7 jam lagi",
+    "is_current_user": true,
+    "avatar_url": "",
+    "created_at": "2026-08-26T07:16:34.693Z",
+    "updated_at": "2026-10-25T07:16:34.693Z"
+  }
+]
