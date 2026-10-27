@@ -537,12 +537,21 @@ export class SessionsRepository {
 
         if (sessRow && (sessRow as { category_id?: string }).category_id) {
           const catId = (sessRow as { category_id: string }).category_id
-          const { data: prods } = await supabase
+          const { data: rawProds } = await supabase
             .from('products')
             .select('id, barcode, name, system_stock, shelf_location, categories:category_id (name)')
             .eq('category_id', catId)
 
-          if (prods && prods.length > 0) {
+          const prods = (rawProds ?? []) as Array<{
+            id: string
+            barcode: string
+            name: string
+            system_stock: number
+            shelf_location?: string
+            categories?: { name?: string } | null
+          }>
+
+          if (prods.length > 0) {
             const toInsert = prods.map(p => ({
               session_id: resolvedId,
               product_id: p.id,
@@ -550,8 +559,8 @@ export class SessionsRepository {
               physical_stock: null,
               is_counted: false
             }))
-            const { data: inserted } = await supabase.from('so_items').insert(toInsert).select()
-            await supabase.from('so_sessions').update({ total_items: toInsert.length }).eq('id', resolvedId)
+            const { data: inserted } = await (supabase.from('so_items') as any).insert(toInsert).select()
+            await (supabase.from('so_sessions') as any).update({ total_items: toInsert.length }).eq('id', resolvedId)
 
             const insertedList = (inserted ?? []) as Array<{ id: string; product_id: string }>
             return prods.map(p => {
