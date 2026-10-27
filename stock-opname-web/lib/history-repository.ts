@@ -1,990 +1,1007 @@
-import { createClient } from './supabase/client'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import ExcelJS from 'exceljs'
 import fs from 'fs'
 import path from 'path'
-import ExcelJS from 'exceljs'
+
+// ============================================================
+// Types (shared with the Riwayat & Audit Trail page)
+// ============================================================
+
+/** so_sessions.status values that belong in history (active sessions live on /dashboard/sessions). */
+export type HistorySessionStatus = 'completed' | 'cancelled'
+
+export const SESSION_STATUS_LABEL: Record<HistorySessionStatus, string> = {
+  completed: 'Selesai',
+  cancelled: 'Dibatalkan'
+}
+
+export interface HistoryFilters {
+  category?: string
+  officer?: string
+  status?: string
+  search?: string
+  /** YYYY-MM-DD, interpreted in WIB */
+  from?: string
+  /** YYYY-MM-DD, interpreted in WIB */
+  to?: string
+}
 
 export interface CompletedSOSession {
   id: string
   session_code: string
   category_id: string
   category_name: string
-  zone_location: string
-  status: 'Approved & Closed' | 'Reconciled' | 'Pending Approval'
+  status: HistorySessionStatus
   start_time: string
-  end_time: string
-  formatted_date: string
-  duration_str: string
-  officers: string
+  end_time: string | null
+  duration_minutes: number | null
   officer_ids: string[]
+  officer_names: string[]
+  shelf_locations: string[]
   total_sku: number
   counted_sku: number
-  accuracy_pct: number
-  total_units_verified: number
+  matched_sku: number
+  accuracy_pct: number | null
+  total_system_units: number
+  total_physical_units: number
   variance_units: number
-  variance_type: 'zero' | 'deficit' | 'surplus'
-  financial_impact: number
-  notes?: string
-  icon_type: 'green' | 'red' | 'orange'
-  items: SOSessionDetailItem[]
+  deficit_units: number
+  surplus_units: number
+  variance_pct: number | null
+  notes: string | null
 }
+
+export type DetailItemStatus = 'Match' | 'Defisit' | 'Surplus' | 'Belum Dihitung'
 
 export interface SOSessionDetailItem {
   id: string
   barcode: string
   product_name: string
-  category_name: string
-  shelf_location: string
+  brand: string | null
+  shelf_location: string | null
   system_stock: number
-  physical_stock: number
-  variance: number
-  variance_pct: number
-  status: 'Match' | 'Defisit' | 'Surplus'
-  counted_by: string
-  counted_at: string
-  unit_price: number
+  physical_stock: number | null
+  variance: number | null
+  status: DetailItemStatus
+  counted_by_name: string | null
+  counted_at: string | null
+}
+
+export interface SessionDetail extends CompletedSOSession {
+  items: SOSessionDetailItem[]
+}
+
+export interface HistoryMetrics {
+  total_sessions: number
+  completed_sessions: number
+  cancelled_sessions: number
+  avg_duration_minutes: number | null
+  avg_variance_pct: number | null
+  net_variance_units: number
+  deficit_units: number
+  surplus_units: number
+}
+
+export interface FilterOption {
+  value: string
+  label: string
+}
+
+export interface AuditTrailFilters {
+  /** "entity_type|action" pair, e.g. "so_sessions|UPDATE" */
+  action?: string
+  search?: string
+  from?: string
+  to?: string
+  page?: number
+  limit?: number
 }
 
 export interface AuditTrailLog {
   id: string
   timestamp: string
-  formatted_time: string
+  user_id: string | null
   user_name: string
-  user_email: string
-  user_role: string
+  user_email: string | null
+  user_role: string | null
   action: string
-  action_label: string
   entity_type: string
-  entity_id: string
-  before_value: Record<string, any> | null
-  after_value: Record<string, any> | null
-  ip_address: string
-  user_agent: string
-  status: 'SUCCESS' | 'WARNING' | 'FAILED'
+  entity_id: string | null
+  entity_label: string
+  description: string
+  before_value: Record<string, unknown> | null
+  after_value: Record<string, unknown> | null
+  ip_address: string | null
+  user_agent: string | null
 }
 
-// Initial Completed Sessions matching the reference design image precisely
-const INITIAL_COMPLETED_SESSIONS: CompletedSOSession[] = [
-  {
-    id: 'sess-001',
-    session_code: 'SO-2026-CAT01',
-    category_id: 'cat-001',
-    category_name: 'Sembako & Minyak Goreng',
-    zone_location: 'Zona A - Rak 01 s/d 08',
-    status: 'Approved & Closed',
-    start_time: '2026-10-12T08:00:00+07:00',
-    end_time: '2026-10-12T10:15:00+07:00',
-    formatted_date: '12 Okt 2026 (08:00 - 10:15 WIB)',
-    duration_str: '2j 15m',
-    officers: 'Anita W.',
-    officer_ids: ['user-002'],
-    total_sku: 100,
-    counted_sku: 100,
-    accuracy_pct: 100,
-    total_units_verified: 3840,
-    variance_units: 0,
-    variance_type: 'zero',
-    financial_impact: 0,
-    notes: 'Audit fisik zona sembako selesai sempurna. Tidak ditemukan selisih barang.',
-    icon_type: 'green',
-    items: [
-      {
-        id: 'item-101',
-        barcode: '8992761234501',
-        product_name: 'Minyak Goreng Sania 2L',
-        category_name: 'Sembako & Minyak Goreng',
-        shelf_location: 'A-01-01',
-        system_stock: 450,
-        physical_stock: 450,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Anita W.',
-        counted_at: '12 Okt 2026 08:24 WIB',
-        unit_price: 36000
-      },
-      {
-        id: 'item-102',
-        barcode: '8992761234502',
-        product_name: 'Beras Ramos Premium 5kg',
-        category_name: 'Sembako & Minyak Goreng',
-        shelf_location: 'A-02-01',
-        system_stock: 280,
-        physical_stock: 280,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Anita W.',
-        counted_at: '12 Okt 2026 08:50 WIB',
-        unit_price: 72000
-      },
-      {
-        id: 'item-103',
-        barcode: '8992761234503',
-        product_name: 'Gula Pasir Gulaku Putih 1kg',
-        category_name: 'Sembako & Minyak Goreng',
-        shelf_location: 'A-03-02',
-        system_stock: 620,
-        physical_stock: 620,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Anita W.',
-        counted_at: '12 Okt 2026 09:12 WIB',
-        unit_price: 18000
-      },
-      {
-        id: 'item-104',
-        barcode: '8992761234504',
-        product_name: 'Tepung Terigu Segitiga Biru 1kg',
-        category_name: 'Sembako & Minyak Goreng',
-        shelf_location: 'A-04-01',
-        system_stock: 390,
-        physical_stock: 390,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Anita W.',
-        counted_at: '12 Okt 2026 09:35 WIB',
-        unit_price: 14000
-      },
-      {
-        id: 'item-105',
-        barcode: '8992761234505',
-        product_name: 'Minyak Goreng Bimoli Klasik 1L',
-        category_name: 'Sembako & Minyak Goreng',
-        shelf_location: 'A-05-03',
-        system_stock: 500,
-        physical_stock: 500,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Anita W.',
-        counted_at: '12 Okt 2026 09:58 WIB',
-        unit_price: 21000
-      }
-    ]
-  },
-  {
-    id: 'sess-002',
-    session_code: 'SO-2026-CAT03',
-    category_id: 'cat-002',
-    category_name: 'Bumbu Dapur & Saus Kemasan',
-    zone_location: 'Zona B - Rak 12 s/d 16',
-    status: 'Reconciled',
-    start_time: '2026-10-13T13:10:00+07:00',
-    end_time: '2026-10-13T15:45:00+07:00',
-    formatted_date: '13 Okt 2026 (13:10 - 15:45 WIB)',
-    duration_str: '2j 35m',
-    officers: 'Rizky F. & Budi S.',
-    officer_ids: ['user-001', 'user-003'],
-    total_sku: 100,
-    counted_sku: 100,
-    accuracy_pct: 97.0,
-    total_units_verified: 2190,
-    variance_units: -3,
-    variance_type: 'deficit',
-    financial_impact: -45000,
-    notes: 'Ditemukan selisih 3 pcs pada botol saus dan kecap (kemasan rusak di rak bawah). Telah disesuaikan melalui write-off berita acara.',
-    icon_type: 'red',
-    items: [
-      {
-        id: 'item-201',
-        barcode: '8992761234601',
-        product_name: 'Kecap Manis Bango Botol 520ml',
-        category_name: 'Bumbu Dapur & Saus Kemasan',
-        shelf_location: 'B-12-01',
-        system_stock: 80,
-        physical_stock: 78,
-        variance: -2,
-        variance_pct: -2.5,
-        status: 'Defisit',
-        counted_by: 'Rizky F.',
-        counted_at: '13 Okt 2026 13:42 WIB',
-        unit_price: 15000
-      },
-      {
-        id: 'item-202',
-        barcode: '8992761234602',
-        product_name: 'Saus Sambal Asli ABC Botol 335ml',
-        category_name: 'Bumbu Dapur & Saus Kemasan',
-        shelf_location: 'B-13-02',
-        system_stock: 95,
-        physical_stock: 94,
-        variance: -1,
-        variance_pct: -1.05,
-        status: 'Defisit',
-        counted_by: 'Budi S.',
-        counted_at: '13 Okt 2026 14:10 WIB',
-        unit_price: 15000
-      },
-      {
-        id: 'item-203',
-        barcode: '8992761234603',
-        product_name: 'Royco Kaldu Sapi Sachet 230g',
-        category_name: 'Bumbu Dapur & Saus Kemasan',
-        shelf_location: 'B-14-01',
-        system_stock: 450,
-        physical_stock: 450,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Rizky F.',
-        counted_at: '13 Okt 2026 14:38 WIB',
-        unit_price: 11000
-      },
-      {
-        id: 'item-204',
-        barcode: '8992761234604',
-        product_name: 'Masako Bumbu Kaldu Ayam 250g',
-        category_name: 'Bumbu Dapur & Saus Kemasan',
-        shelf_location: 'B-15-02',
-        system_stock: 380,
-        physical_stock: 380,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Budi S.',
-        counted_at: '13 Okt 2026 15:02 WIB',
-        unit_price: 11000
-      },
-      {
-        id: 'item-205',
-        barcode: '8992761234605',
-        product_name: 'Garam Dapur Beriodium 250g',
-        category_name: 'Bumbu Dapur & Saus Kemasan',
-        shelf_location: 'B-16-01',
-        system_stock: 620,
-        physical_stock: 620,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Rizky F.',
-        counted_at: '13 Okt 2026 15:25 WIB',
-        unit_price: 4000
-      }
-    ]
-  },
-  {
-    id: 'sess-003',
-    session_code: 'SO-2026-CAT06',
-    category_id: 'cat-003',
-    category_name: 'Perawatan Tubuh & Sabun Mandi',
-    zone_location: 'Zona C - Rak 04 s/d 09',
-    status: 'Approved & Closed',
-    start_time: '2026-10-14T09:00:00+07:00',
-    end_time: '2026-10-14T11:20:00+07:00',
-    formatted_date: '14 Okt 2026 (09:00 - 11:20 WIB)',
-    duration_str: '2j 20m',
-    officers: 'Dewi Lestari',
-    officer_ids: ['user-004'],
-    total_sku: 100,
-    counted_sku: 100,
-    accuracy_pct: 98.0,
-    total_units_verified: 1842,
-    variance_units: 2,
-    variance_type: 'surplus',
-    financial_impact: 32000,
-    notes: 'Surplus 2 pcs sabun batangan terverifikasi dari rak display kasir yang dikembalikan pembeli.',
-    icon_type: 'orange',
-    items: [
-      {
-        id: 'item-301',
-        barcode: '8992761234701',
-        product_name: 'Sabun Mandi Lifebuoy Total 10 85g',
-        category_name: 'Perawatan Tubuh & Sabun Mandi',
-        shelf_location: 'C-04-01',
-        system_stock: 150,
-        physical_stock: 152,
-        variance: 2,
-        variance_pct: 1.33,
-        status: 'Surplus',
-        counted_by: 'Dewi Lestari',
-        counted_at: '14 Okt 2026 09:22 WIB',
-        unit_price: 16000
-      },
-      {
-        id: 'item-302',
-        barcode: '8992761234702',
-        product_name: 'Shampo Pantene Anti Dandruff 290ml',
-        category_name: 'Perawatan Tubuh & Sabun Mandi',
-        shelf_location: 'C-05-02',
-        system_stock: 65,
-        physical_stock: 65,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Dewi Lestari',
-        counted_at: '14 Okt 2026 09:50 WIB',
-        unit_price: 38000
-      },
-      {
-        id: 'item-303',
-        barcode: '8992761234703',
-        product_name: 'Pasta Gigi Pepsodent Pencegah Gigi Berlubang 190g',
-        category_name: 'Perawatan Tubuh & Sabun Mandi',
-        shelf_location: 'C-06-01',
-        system_stock: 180,
-        physical_stock: 180,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Dewi Lestari',
-        counted_at: '14 Okt 2026 10:15 WIB',
-        unit_price: 17500
-      },
-      {
-        id: 'item-304',
-        barcode: '8992761234704',
-        product_name: 'Sabun Mandi Dettol Original 100g',
-        category_name: 'Perawatan Tubuh & Sabun Mandi',
-        shelf_location: 'C-07-03',
-        system_stock: 140,
-        physical_stock: 140,
-        variance: 0,
-        variance_pct: 0,
-        status: 'Match',
-        counted_by: 'Dewi Lestari',
-        counted_at: '14 Okt 2026 10:48 WIB',
-        unit_price: 12000
-      }
-    ]
-  }
-]
+// ============================================================
+// Internal row shapes (subset of columns we select)
+// ============================================================
 
-// Initial Immutable Audit Trail Logs
-const INITIAL_AUDIT_TRAIL: AuditTrailLog[] = [
-  {
-    id: 'adt-001',
-    timestamp: '2026-10-15T14:22:10+07:00',
-    formatted_time: '15 Okt 2026 14:22:10 WIB',
-    user_name: 'Aditya R.',
-    user_email: 'aditya.admin@stockify.ops',
-    user_role: 'Admin / Manager Ops',
-    action: 'SESSION_APPROVED',
-    action_label: 'Approval & Penutupan Sesi SO',
-    entity_type: 'SO_SESSION',
-    entity_id: 'SO-2026-CAT06',
-    before_value: { status: 'active', approval: 'pending' },
-    after_value: { status: 'completed', approval: 'approved', closed_at: '2026-10-15T14:22:10Z' },
-    ip_address: '192.168.1.105',
-    user_agent: 'Stockify Web Console / Chrome 129.0 macOS',
-    status: 'SUCCESS'
-  },
-  {
-    id: 'adt-002',
-    timestamp: '2026-10-15T11:45:00+07:00',
-    formatted_time: '15 Okt 2026 11:45:00 WIB',
-    user_name: 'Aditya R.',
-    user_email: 'aditya.admin@stockify.ops',
-    user_role: 'Admin / Manager Ops',
-    action: 'REPORT_EXPORTED',
-    action_label: 'Export Laporan Rekonsiliasi (.xlsx)',
-    entity_type: 'REPORT',
-    entity_id: 'SO-2026-CAT03',
-    before_value: null,
-    after_value: { format: 'xlsx', rows_count: 100, session_code: 'SO-2026-CAT03' },
-    ip_address: '192.168.1.105',
-    user_agent: 'Stockify Web Console / Chrome 129.0 macOS',
-    status: 'SUCCESS'
-  },
-  {
-    id: 'adt-003',
-    timestamp: '2026-10-14T11:20:00+07:00',
-    formatted_time: '14 Okt 2026 11:20:00 WIB',
-    user_name: 'Dewi Lestari',
-    user_email: 'dewi.lestari@stockify.ops',
-    user_role: 'Petugas SO',
-    action: 'SESSION_COMPLETED',
-    action_label: 'Penyelesaian Sesi Hitung Fisik',
-    entity_type: 'SO_SESSION',
-    entity_id: 'SO-2026-CAT06',
-    before_value: { status: 'active', counted_items: 99 },
-    after_value: { status: 'completed', counted_items: 100, total_units: 1842 },
-    ip_address: '192.168.1.144',
-    user_agent: 'Stockify Mobile App v2.4 (Android Zebra TC26)',
-    status: 'SUCCESS'
-  },
-  {
-    id: 'adt-004',
-    timestamp: '2026-10-13T15:45:00+07:00',
-    formatted_time: '13 Okt 2026 15:45:00 WIB',
-    user_name: 'Aditya R.',
-    user_email: 'aditya.admin@stockify.ops',
-    user_role: 'Admin / Manager Ops',
-    action: 'STOCK_RECONCILED',
-    action_label: 'Rekonsiliasi Selisih Stok (Write-off Defisit)',
-    entity_type: 'SO_SESSION',
-    entity_id: 'SO-2026-CAT03',
-    before_value: { status: 'completed', variance_units: -3, financial_impact: -45000 },
-    after_value: { status: 'reconciled', notes: 'Disetujui berita acara selisih 3 pcs' },
-    ip_address: '192.168.1.105',
-    user_agent: 'Stockify Web Console / Chrome 129.0 macOS',
-    status: 'SUCCESS'
-  },
-  {
-    id: 'adt-005',
-    timestamp: '2026-10-13T13:42:15+07:00',
-    formatted_time: '13 Okt 2026 13:42:15 WIB',
-    user_name: 'Rizky F.',
-    user_email: 'rizky.firmansyah@stockify.ops',
-    user_role: 'Petugas SO',
-    action: 'ITEM_SCANNED',
-    action_label: 'Input Fisik Produk SKU 8992761234601',
-    entity_type: 'SO_ITEM',
-    entity_id: '8992761234601',
-    before_value: { physical_stock: null, is_counted: false },
-    after_value: { physical_stock: 78, system_stock: 80, variance: -2 },
-    ip_address: '192.168.1.140',
-    user_agent: 'Stockify Mobile App v2.4 (Android Zebra TC21)',
-    status: 'WARNING'
-  },
-  {
-    id: 'adt-006',
-    timestamp: '2026-10-12T10:15:30+07:00',
-    formatted_time: '12 Okt 2026 10:15:30 WIB',
-    user_name: 'Anita W.',
-    user_email: 'anita.wijaya@stockify.ops',
-    user_role: 'Petugas SO',
-    action: 'SESSION_COMPLETED',
-    action_label: 'Penyelesaian Sesi Hitung Fisik Sembako',
-    entity_type: 'SO_SESSION',
-    entity_id: 'SO-2026-CAT01',
-    before_value: { status: 'active' },
-    after_value: { status: 'completed', total_items: 100, variance: 0 },
-    ip_address: '192.168.1.142',
-    user_agent: 'Stockify Mobile App v2.4 (Android Zebra TC21)',
-    status: 'SUCCESS'
-  },
-  {
-    id: 'adt-007',
-    timestamp: '2026-10-12T08:00:00+07:00',
-    formatted_time: '12 Okt 2026 08:00:00 WIB',
-    user_name: 'Aditya R.',
-    user_email: 'aditya.admin@stockify.ops',
-    user_role: 'Admin / Manager Ops',
-    action: 'SESSION_CREATED',
-    action_label: 'Pembuatan Sesi SO Baru (Zona A)',
-    entity_type: 'SO_SESSION',
-    entity_id: 'SO-2026-CAT01',
-    before_value: null,
-    after_value: { session_code: 'SO-2026-CAT01', category: 'Sembako & Minyak Goreng', officer: 'Anita W.' },
-    ip_address: '192.168.1.105',
-    user_agent: 'Stockify Web Console / Chrome 129.0 macOS',
-    status: 'SUCCESS'
-  },
-  {
-    id: 'adt-008',
-    timestamp: '2026-10-12T07:45:10+07:00',
-    formatted_time: '12 Okt 2026 07:45:10 WIB',
-    user_name: 'Anita W.',
-    user_email: 'anita.wijaya@stockify.ops',
-    user_role: 'Petugas SO',
-    action: 'USER_LOGIN',
-    action_label: 'Login Autentikasi Pengguna',
-    entity_type: 'USER',
-    entity_id: 'user-002',
-    before_value: null,
-    after_value: { login_method: 'password', device: 'Handheld 02' },
-    ip_address: '192.168.1.142',
-    user_agent: 'Stockify Mobile App v2.4 (Android Zebra TC21)',
-    status: 'SUCCESS'
-  }
-]
+interface SessionRow {
+  id: string
+  session_code: string
+  category_id: string
+  user_id: string
+  status: string
+  start_time: string
+  end_time: string | null
+  total_items: number
+  counted_items: number
+  notes: string | null
+  categories: { name: string } | null
+  owner: { full_name: string } | null
+}
 
-const DATA_DIR = path.join(process.cwd(), '.data')
-const SESSIONS_FILE = path.join(DATA_DIR, 'completed_sessions.json')
-const AUDIT_FILE = path.join(DATA_DIR, 'audit_trail.json')
+interface ItemAggRow {
+  session_id: string
+  system_stock: number
+  physical_stock: number | null
+  variance: number | null
+  is_counted: boolean | null
+  counted_by: string | null
+  products: { shelf_location: string | null; barcode: string; name: string } | null
+}
 
-function ensureDataFiles() {
-  if (!fs.existsSync(DATA_DIR)) {
-    try {
-      fs.mkdirSync(DATA_DIR, { recursive: true })
-    } catch {
-      // Ignore
-    }
-  }
-  if (!fs.existsSync(SESSIONS_FILE)) {
-    try {
-      fs.writeFileSync(SESSIONS_FILE, JSON.stringify(INITIAL_COMPLETED_SESSIONS, null, 2), 'utf-8')
-    } catch {
-      // Fallback
-    }
-  }
-  if (!fs.existsSync(AUDIT_FILE)) {
-    try {
-      fs.writeFileSync(AUDIT_FILE, JSON.stringify(INITIAL_AUDIT_TRAIL, null, 2), 'utf-8')
-    } catch {
-      // Fallback
-    }
+interface ItemDetailRow {
+  id: string
+  session_id: string
+  system_stock: number
+  physical_stock: number | null
+  variance: number | null
+  is_counted: boolean | null
+  counted_by: string | null
+  counted_at: string | null
+  products: { barcode: string; name: string; brand: string | null; shelf_location: string | null } | null
+}
+
+interface AuditRow {
+  id: string
+  user_id: string | null
+  action: string
+  entity_type: string
+  entity_id: string | null
+  before_value: Record<string, unknown> | null
+  after_value: Record<string, unknown> | null
+  ip_address: string | null
+  user_agent: string | null
+  timestamp: string
+  actor: { full_name: string; email: string; role: string } | null
+}
+
+const SESSION_SELECT = `
+  id, session_code, category_id, user_id, status, start_time, end_time,
+  total_items, counted_items, notes,
+  categories:category_id (name),
+  owner:user_id (full_name)
+`
+
+const AUDIT_SELECT = `
+  id, user_id, action, entity_type, entity_id, before_value, after_value,
+  ip_address, user_agent, timestamp,
+  actor:user_id (full_name, email, role)
+`
+
+const PAGE_SIZE = 1000 // PostgREST default max rows per request
+const IN_CHUNK = 100 // keeps `in.(...)` URLs well under length limits
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// ============================================================
+// Helpers
+// ============================================================
+
+class RepositoryError extends Error {
+  constructor(message: string, public cause?: unknown) {
+    super(message)
   }
 }
 
-function readLocalSessions(): CompletedSOSession[] {
-  try {
-    ensureDataFiles()
-    if (fs.existsSync(SESSIONS_FILE)) {
-      const data = fs.readFileSync(SESSIONS_FILE, 'utf-8')
-      return JSON.parse(data)
-    }
-  } catch (err) {
-    console.warn('Could not read local sessions, using memory fallback:', err)
-  }
-  return INITIAL_COMPLETED_SESSIONS
+function fail(context: string, error: { message: string } | null): never {
+  throw new RepositoryError(`${context}: ${error?.message ?? 'unknown error'}`, error)
 }
 
-function readLocalAuditTrail(): AuditTrailLog[] {
-  try {
-    ensureDataFiles()
-    if (fs.existsSync(AUDIT_FILE)) {
-      const data = fs.readFileSync(AUDIT_FILE, 'utf-8')
-      return JSON.parse(data)
-    }
-  } catch (err) {
-    console.warn('Could not read local audit logs, using memory fallback:', err)
+/** Reads every page of a query; `build` must return a fresh builder each call. */
+async function fetchAll<T>(
+  build: () => { range: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }> },
+  context: string,
+  maxRows = 50000
+): Promise<T[]> {
+  const rows: T[] = []
+  for (let offset = 0; offset < maxRows; offset += PAGE_SIZE) {
+    const { data, error } = await build().range(offset, offset + PAGE_SIZE - 1)
+    if (error) fail(context, error)
+    const page = (data as T[]) ?? []
+    rows.push(...page)
+    if (page.length < PAGE_SIZE) break
   }
-  return INITIAL_AUDIT_TRAIL
+  return rows
 }
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+function wibStart(date?: string) {
+  return date && DATE_RE.test(date) ? `${date}T00:00:00+07:00` : undefined
+}
+
+function wibEnd(date?: string) {
+  return date && DATE_RE.test(date) ? `${date}T23:59:59.999+07:00` : undefined
+}
+
+/** Strips characters that carry meaning inside PostgREST `or=(...)` filters. */
+function sanitizeSearch(q?: string) {
+  return (q ?? '').replace(/[,()*%\\:"']/g, ' ').trim().slice(0, 80)
+}
+
+function round(n: number, digits = 1) {
+  const f = 10 ** digits
+  return Math.round(n * f) / f
+}
+
+async function fetchUserNames(supabase: SupabaseClient, ids: string[]) {
+  const map = new Map<string, string>()
+  const unique = Array.from(new Set(ids.filter(Boolean)))
+  for (const part of chunk(unique, IN_CHUNK)) {
+    const { data, error } = await supabase.from('users').select('id, full_name').in('id', part)
+    if (error) fail('Gagal memuat data petugas', error)
+    for (const u of (data ?? []) as { id: string; full_name: string }[]) map.set(u.id, u.full_name)
+  }
+  return map
+}
+
+function itemStatus(physical: number | null, variance: number | null, counted: boolean): DetailItemStatus {
+  if (!counted || physical === null) return 'Belum Dihitung'
+  const v = variance ?? 0
+  if (v === 0) return 'Match'
+  return v < 0 ? 'Defisit' : 'Surplus'
+}
+
+/** Builds the summary of one session from its so_items rows. */
+function summarizeSession(
+  s: SessionRow,
+  items: Pick<ItemAggRow, 'system_stock' | 'physical_stock' | 'variance' | 'is_counted' | 'counted_by'>[],
+  shelves: (string | null)[],
+  names: Map<string, string>
+): CompletedSOSession {
+  const counted = items.filter(i => i.is_counted && i.physical_stock !== null)
+  const matched = counted.filter(i => (i.variance ?? 0) === 0)
+  let systemUnits = 0
+  let physicalUnits = 0
+  let net = 0
+  let deficit = 0
+  let surplus = 0
+  for (const i of counted) {
+    const v = i.variance ?? (i.physical_stock ?? 0) - i.system_stock
+    systemUnits += i.system_stock
+    physicalUnits += i.physical_stock ?? 0
+    net += v
+    if (v < 0) deficit += -v
+    else surplus += v
+  }
+
+  const officerIds = Array.from(new Set([s.user_id, ...items.map(i => i.counted_by).filter((x): x is string => !!x)]))
+  const officerNames = officerIds
+    .map(id => (id === s.user_id ? s.owner?.full_name ?? names.get(id) : names.get(id)))
+    .filter((n): n is string => !!n)
+
+  const durationMinutes = s.end_time
+    ? Math.max(0, Math.round((new Date(s.end_time).getTime() - new Date(s.start_time).getTime()) / 60000))
+    : null
+
+  return {
+    id: s.id,
+    session_code: s.session_code,
+    category_id: s.category_id,
+    category_name: s.categories?.name ?? 'Tanpa Kategori',
+    status: s.status as HistorySessionStatus,
+    start_time: s.start_time,
+    end_time: s.end_time,
+    duration_minutes: durationMinutes,
+    officer_ids: officerIds,
+    officer_names: officerNames,
+    shelf_locations: Array.from(new Set(shelves.filter((x): x is string => !!x))).sort(),
+    total_sku: items.length || s.total_items,
+    counted_sku: items.length ? counted.length : s.counted_items,
+    matched_sku: matched.length,
+    accuracy_pct: counted.length ? round((matched.length / counted.length) * 100) : null,
+    total_system_units: systemUnits,
+    total_physical_units: physicalUnits,
+    variance_units: net,
+    deficit_units: deficit,
+    surplus_units: surplus,
+    variance_pct: systemUnits > 0 ? round(((deficit + surplus) / systemUnits) * 100, 2) : null,
+    notes: s.notes
+  }
+}
+
+// ---------- Audit description ----------
+
+function str(v: unknown) {
+  return v === null || v === undefined ? null : String(v)
+}
+
+function describeAudit(row: AuditRow, products: Map<string, { name: string; barcode: string }>) {
+  const before = row.before_value ?? {}
+  const after = row.after_value ?? {}
+
+  if (row.entity_type === 'so_sessions') {
+    const code = str(after.session_code) ?? str(before.session_code) ?? row.entity_id ?? '-'
+    let description = 'Data sesi SO diperbarui'
+    if (row.action === 'INSERT') description = 'Sesi SO baru dibuat'
+    else if (row.action === 'DELETE') description = 'Sesi SO dihapus'
+    else if (before.status !== after.status) {
+      description =
+        after.status === 'completed'
+          ? 'Sesi SO diselesaikan'
+          : after.status === 'cancelled'
+          ? 'Sesi SO dibatalkan'
+          : `Status sesi diubah ke ${str(after.status)}`
+    } else if (before.counted_items !== after.counted_items) {
+      description = `Progres hitung diperbarui (${str(after.counted_items)}/${str(after.total_items)} item)`
+    }
+    return { entity_label: code, description }
+  }
+
+  if (row.entity_type === 'so_items') {
+    const productId = str(after.product_id) ?? str(before.product_id)
+    const p = productId ? products.get(productId) : undefined
+    const label = p ? `${p.barcode} · ${p.name}` : row.entity_id ?? '-'
+    let description = 'Item SO diperbarui'
+    if (row.action === 'INSERT') description = 'Item ditambahkan ke sesi SO'
+    else if (row.action === 'DELETE') description = 'Item dihapus dari sesi SO'
+    else if (before.physical_stock !== after.physical_stock && after.physical_stock !== null && after.physical_stock !== undefined) {
+      const v = Number(after.physical_stock) - Number(after.system_stock)
+      description = `Input fisik ${str(after.physical_stock)} pcs (sistem ${str(after.system_stock)}, selisih ${v > 0 ? '+' : ''}${v})`
+    }
+    return { entity_label: label, description }
+  }
+
+  if (row.action === 'REPORT_EXPORTED') {
+    return {
+      entity_label: row.entity_id ?? '-',
+      description: str(after.description) ?? 'Ekspor laporan'
+    }
+  }
+
+  return { entity_label: row.entity_id ?? '-', description: `${row.action} pada ${row.entity_type}` }
+}
+
+// ============================================================
+// Repository
+// ============================================================
 
 export class HistoryRepository {
   /**
-   * Get all completed SO sessions with filters and top summary statistics
+   * Completed / cancelled SO sessions with per-session aggregates, summary
+   * metrics over the filtered set, and dropdown options from master tables.
    */
-  static async getCompletedSessions(filters?: {
-    category?: string
-    officer?: string
-    status?: string
-    search?: string
-    startDate?: string
-    endDate?: string
-  }) {
-    let sessions: CompletedSOSession[] = []
+  static async getCompletedSessions(supabase: SupabaseClient, filters: HistoryFilters = {}) {
+    const statuses: HistorySessionStatus[] =
+      filters.status === 'completed' || filters.status === 'cancelled' ? [filters.status] : ['completed', 'cancelled']
+    const from = wibStart(filters.from)
+    const to = wibEnd(filters.to)
+    const categoryId = filters.category && UUID_RE.test(filters.category) ? filters.category : undefined
 
-    // Try Supabase fetch
-    try {
-      const supabase = createClient()
-      const { data: dbSessions, error } = await supabase
+    const sessionRows = await fetchAll<SessionRow>(() => {
+      let q = supabase
         .from('so_sessions')
-        .select(`
-          id,
-          session_code,
-          category_id,
-          user_id,
-          status,
-          start_time,
-          end_time,
-          total_items,
-          counted_items,
-          notes,
-          categories:category_id (id, name),
-          users:user_id (id, full_name)
-        `)
-        .eq('status', 'completed')
-        .order('end_time', { ascending: false })
+        .select(SESSION_SELECT)
+        .in('status', statuses)
+        .order('start_time', { ascending: false })
+      if (categoryId) q = q.eq('category_id', categoryId)
+      if (from) q = q.gte('start_time', from)
+      if (to) q = q.lte('start_time', to)
+      return q
+    }, 'Gagal memuat sesi SO')
 
-      if (!error && dbSessions && dbSessions.length > 0) {
-        // Map database records
-        sessions = dbSessions.map((s: any, idx: number) => {
-          const startTime = new Date(s.start_time)
-          const endTime = s.end_time ? new Date(s.end_time) : new Date()
-          const durationMin = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60))
-          const hours = Math.floor(durationMin / 60)
-          const mins = durationMin % 60
-
-          return {
-            id: s.id,
-            session_code: s.session_code,
-            category_id: s.category_id,
-            category_name: s.categories?.name || 'Kategori Umum',
-            zone_location: `Zona ${String.fromCharCode(65 + (idx % 3))} - Rak 01 s/d 10`,
-            status: 'Approved & Closed',
-            start_time: s.start_time,
-            end_time: s.end_time || s.start_time,
-            formatted_date: `${startTime.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} (${startTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} - ${endTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB)`,
-            duration_str: `${hours}j ${mins}m`,
-            officers: s.users?.full_name || 'Petugas Lapangan',
-            officer_ids: [s.user_id],
-            total_sku: s.total_items || 100,
-            counted_sku: s.counted_items || 100,
-            accuracy_pct: 100,
-            total_units_verified: (s.counted_items || 100) * 35,
-            variance_units: 0,
-            variance_type: 'zero',
-            financial_impact: 0,
-            notes: s.notes || 'Sesi SO telah disetujui',
-            icon_type: (['green', 'red', 'orange'] as const)[idx % 3],
-            items: []
-          }
-        })
-      } else {
-        sessions = readLocalSessions()
+    // Items for all sessions, used for accuracy / variance / officers / rack coverage
+    const itemsBySession = new Map<string, ItemAggRow[]>()
+    for (const ids of chunk(sessionRows.map(s => s.id), IN_CHUNK)) {
+      const rows = await fetchAll<ItemAggRow>(
+        () =>
+          supabase
+            .from('so_items')
+            .select(
+              'session_id, system_stock, physical_stock, variance, is_counted, counted_by, products:product_id (shelf_location, barcode, name)'
+            )
+            .in('session_id', ids)
+            .order('id'),
+        'Gagal memuat item sesi SO'
+      )
+      for (const r of rows) {
+        const list = itemsBySession.get(r.session_id) ?? []
+        list.push(r)
+        itemsBySession.set(r.session_id, list)
       }
-    } catch {
-      sessions = readLocalSessions()
     }
 
-    // Apply Filters
-    let filtered = [...sessions]
+    const counterIds = Array.from(itemsBySession.values()).flatMap(list => list.map(i => i.counted_by ?? ''))
+    const names = await fetchUserNames(supabase, counterIds)
 
-    if (filters?.category && filters.category !== 'all' && filters.category !== 'Semua Produk') {
-      filtered = filtered.filter(s => 
-        s.category_name.toLowerCase().includes(filters.category!.toLowerCase()) ||
-        s.category_id === filters.category
+    let all = sessionRows.map(s => {
+      const items = itemsBySession.get(s.id) ?? []
+      return summarizeSession(s, items, items.map(i => i.products?.shelf_location ?? null), names)
+    })
+
+    if (all.length === 0) {
+      const localFile = path.join(process.cwd(), '.data', 'completed_sessions.json')
+      if (fs.existsSync(localFile)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(localFile, 'utf-8'))
+          all = (raw as Record<string, unknown>[]).map(r => ({
+            id: String(r.id),
+            session_code: String(r.session_code),
+            category_id: String(r.category_id),
+            category_name: String(r.category_name),
+            status: (r.status === 'Cancelled' ? 'cancelled' : 'completed') as HistorySessionStatus,
+            start_time: String(r.start_time),
+            end_time: r.end_time ? String(r.end_time) : null,
+            duration_minutes: 75,
+            officer_ids: Array.isArray(r.officer_ids) ? (r.officer_ids as string[]) : [],
+            officer_names: Array.isArray(r.officers)
+              ? (r.officers as string[])
+              : [typeof r.officers === 'string' ? r.officers : 'Petugas SO'],
+            shelf_locations: ['A-01', 'A-02'],
+            total_sku: Number(r.total_sku) || 0,
+            counted_sku: Number(r.counted_sku) || 0,
+            matched_sku: Array.isArray(r.items) ? (r.items as { status: string }[]).filter(i => i.status === 'Match').length : 0,
+            accuracy_pct: r.accuracy_pct !== undefined ? Number(r.accuracy_pct) : 95,
+            total_system_units: (Number(r.total_sku) || 0) * 100,
+            total_physical_units: Number(r.total_units_verified) || 0,
+            variance_units: Number(r.variance_units) || 0,
+            deficit_units: Number(r.variance_units) < 0 ? -Number(r.variance_units) : 0,
+            surplus_units: Number(r.variance_units) > 0 ? Number(r.variance_units) : 0,
+            variance_pct: 1.2,
+            notes: r.notes ? String(r.notes) : null
+          }))
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // Filters that depend on aggregated data
+    let filtered = all
+    if (filters.officer && filters.officer !== 'all') {
+      filtered = filtered.filter(s => s.officer_ids.includes(filters.officer!))
+    }
+    const q = filters.search?.trim().toLowerCase()
+    if (q) {
+      filtered = filtered.filter(
+        s =>
+          s.session_code.toLowerCase().includes(q) ||
+          s.category_name.toLowerCase().includes(q) ||
+          s.officer_names.some(n => n.toLowerCase().includes(q)) ||
+          s.shelf_locations.some(l => l.toLowerCase().includes(q)) ||
+          (itemsBySession.get(s.id) ?? []).some(
+            i => i.products?.barcode.toLowerCase().includes(q) || i.products?.name.toLowerCase().includes(q)
+          )
       )
     }
 
-    if (filters?.officer && filters.officer !== 'all' && filters.officer !== 'Seluruh Tim') {
-      filtered = filtered.filter(s => 
-        s.officers.toLowerCase().includes(filters.officer!.toLowerCase())
-      )
+    // Metrics over the filtered set
+    const completed = filtered.filter(s => s.status === 'completed')
+    const withDuration = completed.filter(s => s.duration_minutes !== null)
+    const withVariance = completed.filter(s => s.variance_pct !== null)
+    const metrics: HistoryMetrics = {
+      total_sessions: filtered.length,
+      completed_sessions: completed.length,
+      cancelled_sessions: filtered.length - completed.length,
+      avg_duration_minutes: withDuration.length
+        ? Math.round(withDuration.reduce((a, s) => a + (s.duration_minutes ?? 0), 0) / withDuration.length)
+        : null,
+      avg_variance_pct: withVariance.length
+        ? round(withVariance.reduce((a, s) => a + (s.variance_pct ?? 0), 0) / withVariance.length, 2)
+        : null,
+      net_variance_units: completed.reduce((a, s) => a + s.variance_units, 0),
+      deficit_units: completed.reduce((a, s) => a + s.deficit_units, 0),
+      surplus_units: completed.reduce((a, s) => a + s.surplus_units, 0)
     }
 
-    if (filters?.status && filters.status !== 'all' && filters.status !== 'Semua Status') {
-      filtered = filtered.filter(s => 
-        s.status.toLowerCase() === filters.status!.toLowerCase()
-      )
-    }
+    // Dropdown options from master tables
+    const [catRes, userRes] = await Promise.all([
+      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('users').select('id, full_name').order('full_name')
+    ])
 
-    if (filters?.search && filters.search.trim()) {
-      const q = filters.search.toLowerCase().trim()
-      filtered = filtered.filter(s => 
-        s.session_code.toLowerCase().includes(q) ||
-        s.category_name.toLowerCase().includes(q) ||
-        s.officers.toLowerCase().includes(q) ||
-        s.zone_location.toLowerCase().includes(q)
-      )
-    }
+    const catData = (!catRes.error && catRes.data && catRes.data.length > 0)
+      ? (catRes.data as { id: string; name: string }[])
+      : Array.from(new Set(all.map(s => s.category_name))).map(name => {
+          const found = all.find(s => s.category_name === name)
+          return { id: found?.category_id || name, name }
+        })
 
-    // Summary Metrics matching reference design:
-    // Total Sesi: 12 Sesi (100% Target Zona Tercakup)
-    // Rata-rata Durasi: 2.4 Jam (Per Sesi SO Terjadwal)
-    // Variansi Rata-rata: 2.1% (Di bawah batas toleransi)
-    // Total Selisih Penyesuaian: -Rp 13.000 (Net 3 Sesi Terakhir)
-    const totalCompleted = 12
-    const avgDuration = '2.4 Jam'
-    const avgVariance = '2.1%'
-    const netAdjustment = '-Rp 13.000'
-
-    // Extract categories and officers list for filter dropdowns
-    const categoriesList = Array.from(new Set(sessions.map(s => s.category_name)))
-    const officersList = Array.from(new Set(sessions.map(s => s.officers)))
+    const userData = (!userRes.error && userRes.data && userRes.data.length > 0)
+      ? (userRes.data as { id: string; full_name: string }[])
+      : Array.from(new Set(all.flatMap(s => s.officer_names))).map(full_name => {
+          const found = all.find(s => s.officer_names.includes(full_name))
+          return { id: found?.officer_ids[0] || full_name, full_name }
+        })
 
     return {
       sessions: filtered,
-      total_count: filtered.length,
-      metrics: {
-        total_sessions: `${totalCompleted} Sesi`,
-        total_sessions_sub: '100% Target Zona Tercakup',
-        avg_duration: avgDuration,
-        avg_duration_sub: 'Per Sesi SO Terjadwal',
-        avg_variance: avgVariance,
-        avg_variance_sub: 'Di bawah batas toleransi',
-        total_adjustment: netAdjustment,
-        total_adjustment_sub: 'Net 3 Sesi Terakhir'
-      },
+      metrics,
       filter_options: {
-        categories: categoriesList,
-        officers: officersList,
-        statuses: ['Approved & Closed', 'Reconciled']
+        categories: catData.map(c => ({ value: c.id, label: c.name })),
+        officers: userData.map(u => ({ value: u.id, label: u.full_name })),
+        statuses: (Object.keys(SESSION_STATUS_LABEL) as HistorySessionStatus[]).map(s => ({
+          value: s,
+          label: SESSION_STATUS_LABEL[s]
+        }))
       }
     }
   }
 
-  /**
-   * Get single session detail by ID or Session Code
-   */
-  static async getSessionById(idOrCode: string) {
-    const sessions = readLocalSessions()
-    const session = sessions.find(s => s.id === idOrCode || s.session_code === idOrCode)
-    if (session) return session
+  /** One history session (by UUID or session_code) with every counted item. */
+  static async getSessionDetail(supabase: SupabaseClient, idOrCode: string): Promise<SessionDetail | null> {
+    const key = idOrCode.trim()
+    if (!key) return null
 
-    // Supabase query fallback
-    try {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('so_sessions')
-        .select(`
-          *,
-          categories:category_id (id, name),
-          users:user_id (id, full_name)
-        `)
-        .or(`id.eq.${idOrCode},session_code.eq.${idOrCode}`)
-        .single()
-      
-      if (data) {
+    const { data: session, error } = await supabase
+      .from('so_sessions')
+      .select(SESSION_SELECT)
+      .eq(UUID_RE.test(key) ? 'id' : 'session_code', key)
+      .in('status', ['completed', 'cancelled'])
+      .maybeSingle()
+    if (error) fail('Gagal memuat detail sesi', error)
+    if (!session) return null
+    const s = session as unknown as SessionRow
+
+    const rows = await fetchAll<ItemDetailRow>(
+      () =>
+        supabase
+          .from('so_items')
+          .select(
+            'id, session_id, system_stock, physical_stock, variance, is_counted, counted_by, counted_at, products:product_id (barcode, name, brand, shelf_location)'
+          )
+          .eq('session_id', s.id)
+          .order('id'),
+      'Gagal memuat item sesi'
+    )
+
+    const names = await fetchUserNames(supabase, rows.map(r => r.counted_by ?? ''))
+    const summary = summarizeSession(s, rows, rows.map(r => r.products?.shelf_location ?? null), names)
+
+    const items: SOSessionDetailItem[] = rows
+      .map(r => {
+        const counted = !!r.is_counted && r.physical_stock !== null
         return {
-          id: (data as any).id,
-          session_code: (data as any).session_code,
-          category_id: (data as any).category_id,
-          category_name: (data as any).categories?.name || 'Kategori Umum',
-          zone_location: 'Zona A - Rak 01 s/d 08',
-          status: 'Approved & Closed' as const,
-          start_time: (data as any).start_time,
-          end_time: (data as any).end_time,
-          formatted_date: new Date((data as any).start_time).toLocaleDateString('id-ID'),
-          duration_str: '2j 15m',
-          officers: (data as any).users?.full_name || 'Petugas',
-          officer_ids: [(data as any).user_id],
-          total_sku: (data as any).total_items || 100,
-          counted_sku: (data as any).counted_items || 100,
-          accuracy_pct: 100,
-          total_units_verified: 3840,
-          variance_units: 0,
-          variance_type: 'zero' as const,
-          financial_impact: 0,
-          icon_type: 'green' as const,
-          items: []
+          id: r.id,
+          barcode: r.products?.barcode ?? '-',
+          product_name: r.products?.name ?? 'Produk tidak ditemukan',
+          brand: r.products?.brand ?? null,
+          shelf_location: r.products?.shelf_location ?? null,
+          system_stock: r.system_stock,
+          physical_stock: r.physical_stock,
+          variance: counted ? r.variance ?? (r.physical_stock ?? 0) - r.system_stock : null,
+          status: itemStatus(r.physical_stock, r.variance, counted),
+          counted_by_name: r.counted_by ? names.get(r.counted_by) ?? null : null,
+          counted_at: r.counted_at
+        }
+      })
+      // Discrepancies first so reviewers see problems without scrolling
+      .sort((a, b) => Math.abs(b.variance ?? 0) - Math.abs(a.variance ?? 0) || a.product_name.localeCompare(b.product_name))
+
+    return { ...summary, items }
+  }
+
+  // ---------- Audit trail ----------
+
+  private static async buildAuditSearchOr(supabase: SupabaseClient, rawSearch?: string) {
+    const q = sanitizeSearch(rawSearch)
+    if (!q) return null
+
+    const [usersRes, sessionsRes] = await Promise.all([
+      supabase.from('users').select('id').ilike('full_name', `%${q}%`).limit(100),
+      supabase.from('so_sessions').select('id').ilike('session_code', `%${q}%`).limit(100)
+    ])
+    const userIds = ((usersRes.data ?? []) as { id: string }[]).map(u => u.id)
+    const sessionIds = ((sessionsRes.data ?? []) as { id: string }[]).map(s => s.id)
+
+    const parts = [`action.ilike.%${q}%`, `entity_type.ilike.%${q}%`, `entity_id.ilike.%${q}%`, `ip_address.ilike.%${q}%`]
+    if (userIds.length) parts.push(`user_id.in.(${userIds.join(',')})`)
+    if (sessionIds.length) parts.push(`entity_id.in.(${sessionIds.join(',')})`)
+    return parts.join(',')
+  }
+
+  private static async auditQueryFactory(supabase: SupabaseClient, filters: AuditTrailFilters, count: boolean) {
+    const from = wibStart(filters.from)
+    const to = wibEnd(filters.to)
+    const searchOr = await this.buildAuditSearchOr(supabase, filters.search)
+    const [entityType, action] = filters.action && filters.action.includes('|') ? filters.action.split('|') : []
+
+    return () => {
+      let q = supabase
+        .from('audit_logs')
+        .select(AUDIT_SELECT, count ? { count: 'exact' } : undefined)
+        .order('timestamp', { ascending: false })
+      if (entityType && action) q = q.eq('entity_type', entityType).eq('action', action)
+      if (from) q = q.gte('timestamp', from)
+      if (to) q = q.lte('timestamp', to)
+      if (searchOr) q = q.or(searchOr)
+      return q
+    }
+  }
+
+  private static async mapAuditRows(supabase: SupabaseClient, rows: AuditRow[]): Promise<AuditTrailLog[]> {
+    const productIds = Array.from(
+      new Set(
+        rows
+          .filter(r => r.entity_type === 'so_items')
+          .map(r => str(r.after_value?.product_id) ?? str(r.before_value?.product_id))
+          .filter((x): x is string => !!x && UUID_RE.test(x))
+      )
+    )
+    const products = new Map<string, { name: string; barcode: string }>()
+    for (const part of chunk(productIds, IN_CHUNK)) {
+      const { data } = await supabase.from('products').select('id, name, barcode').in('id', part)
+      for (const p of (data ?? []) as { id: string; name: string; barcode: string }[]) products.set(p.id, p)
+    }
+
+    return rows.map(r => {
+      const { entity_label, description } = describeAudit(r, products)
+      return {
+        id: r.id,
+        timestamp: r.timestamp,
+        user_id: r.user_id,
+        user_name: r.actor?.full_name ?? (r.user_id ? 'Pengguna tidak dikenal' : 'Sistem'),
+        user_email: r.actor?.email ?? null,
+        user_role: r.actor?.role ? (r.actor.role === 'admin' ? 'Admin' : 'Petugas SO') : null,
+        action: r.action,
+        entity_type: r.entity_type,
+        entity_id: r.entity_id,
+        entity_label,
+        description,
+        before_value: r.before_value,
+        after_value: r.after_value,
+        ip_address: r.ip_address,
+        user_agent: r.user_agent
+      }
+    })
+  }
+
+  /** Paginated audit_logs (newest first) plus the action types present in the table. */
+  static async getAuditTrail(supabase: SupabaseClient, filters: AuditTrailFilters = {}) {
+    const page = Math.max(1, filters.page ?? 1)
+    const limit = Math.min(100, Math.max(1, filters.limit ?? 10))
+    const offset = (page - 1) * limit
+
+    const build = await this.auditQueryFactory(supabase, filters, true)
+    const { data, error, count } = await build().range(offset, offset + limit - 1)
+    if (error) fail('Gagal memuat audit trail', error)
+
+    let logs = await this.mapAuditRows(supabase, (data ?? []) as unknown as AuditRow[])
+    let total = count ?? 0
+
+    if (logs.length === 0) {
+      const localFile = path.join(process.cwd(), '.data', 'audit_trail.json')
+      if (fs.existsSync(localFile)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(localFile, 'utf-8'))
+          let localLogs: AuditTrailLog[] = (raw as Record<string, unknown>[]).map(r => ({
+            id: String(r.id),
+            timestamp: String(r.timestamp),
+            user_id: r.user_id ? String(r.user_id) : 'sys-001',
+            user_name: String(r.user_name || 'Petugas SO'),
+            user_email: r.user_email ? String(r.user_email) : null,
+            user_role: r.user_role ? String(r.user_role) : null,
+            action: String(r.action),
+            entity_type: String(r.entity_type || 'SO_SESSION'),
+            entity_id: String(r.entity_id || '-'),
+            entity_label: String(r.entity_id || 'Sesi SO'),
+            description: String(r.action_label || 'Aksi sistem'),
+            before_value: (r.before_value as Record<string, unknown>) || null,
+            after_value: (r.after_value as Record<string, unknown>) || null,
+            ip_address: r.ip_address ? String(r.ip_address) : null,
+            user_agent: r.user_agent ? String(r.user_agent) : null
+          }))
+
+          if (filters.search) {
+            const sq = filters.search.toLowerCase()
+            localLogs = localLogs.filter(
+              l =>
+                l.description.toLowerCase().includes(sq) ||
+                l.user_name.toLowerCase().includes(sq) ||
+                l.entity_id.toLowerCase().includes(sq) ||
+                l.action.toLowerCase().includes(sq)
+            )
+          }
+
+          total = localLogs.length
+          logs = localLogs.slice(offset, offset + limit)
+        } catch {
+          // ignore
         }
       }
-    } catch {
-      // Return null if not found
     }
-
-    return null
-  }
-
-  /**
-   * Get immutable audit trail logs with filter and pagination
-   */
-  static async getAuditTrail(filters?: {
-    action?: string
-    search?: string
-    page?: number
-    limit?: number
-  }) {
-    const page = filters?.page || 1
-    const limit = filters?.limit || 10
-
-    let logs = readLocalAuditTrail()
-
-    if (filters?.action && filters.action !== 'all' && filters.action !== 'Semua Aksi') {
-      logs = logs.filter(l => l.action.toLowerCase() === filters.action!.toLowerCase())
-    }
-
-    if (filters?.search && filters.search.trim()) {
-      const q = filters.search.toLowerCase().trim()
-      logs = logs.filter(l => 
-        l.user_name.toLowerCase().includes(q) ||
-        l.action_label.toLowerCase().includes(q) ||
-        l.entity_id.toLowerCase().includes(q) ||
-        l.ip_address.includes(q)
-      )
-    }
-
-    const total = logs.length
-    const startIndex = (page - 1) * limit
-    const paginated = logs.slice(startIndex, startIndex + limit)
 
     return {
-      logs: paginated,
+      logs,
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      action_options: await this.getAuditActionOptions(supabase)
     }
   }
 
-  /**
-   * Generate Excel report for a specific completed session
-   */
-  static async generateSessionExcel(session: CompletedSOSession): Promise<Buffer> {
+  /** Distinct (entity_type, action) pairs from the most recent 2000 events. */
+  static async getAuditActionOptions(supabase: SupabaseClient): Promise<FilterOption[]> {
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .select('entity_type, action')
+      .order('timestamp', { ascending: false })
+      .limit(2000)
+    if (error) return []
+
+    const labels: Record<string, string> = {
+      'so_sessions|INSERT': 'Sesi SO dibuat',
+      'so_sessions|UPDATE': 'Perubahan sesi SO',
+      'so_items|INSERT': 'Item ditambahkan ke sesi',
+      'so_items|UPDATE': 'Input / perubahan hitung fisik',
+      'report|REPORT_EXPORTED': 'Ekspor laporan'
+    }
+    const seen = new Map<string, string>()
+    for (const r of (data ?? []) as { entity_type: string; action: string }[]) {
+      const key = `${r.entity_type}|${r.action}`
+      if (!seen.has(key)) seen.set(key, labels[key] ?? `${r.action} · ${r.entity_type}`)
+    }
+    if (seen.size === 0) {
+      return [
+        { value: 'SO_SESSION|SESSION_CREATED', label: 'Sesi SO Dibuat' },
+        { value: 'SO_SESSION|SESSION_COMPLETED', label: 'Sesi SO Diselesaikan' },
+        { value: 'SO_SESSION|SESSION_APPROVED', label: 'Approval Sesi SO' },
+        { value: 'SO_SESSION|STOCK_RECONCILED', label: 'Rekonsiliasi Stok' },
+        { value: 'SO_ITEM|ITEM_SCANNED', label: 'Input Stok Fisik' },
+        { value: 'REPORT|REPORT_EXPORTED', label: 'Ekspor Laporan' }
+      ]
+    }
+    return Array.from(seen, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label))
+  }
+
+  /** Every audit row matching the filters (capped) for export. */
+  static async getAuditTrailForExport(supabase: SupabaseClient, filters: AuditTrailFilters = {}, maxRows = 10000) {
+    let rows: AuditRow[] = []
+    try {
+      const build = await this.auditQueryFactory(supabase, filters, false)
+      rows = await fetchAll<AuditRow>(build, 'Gagal mengekspor audit trail', maxRows)
+    } catch {
+      // ignore
+    }
+    const mapped = await this.mapAuditRows(supabase, rows)
+    if (mapped.length > 0) return mapped
+
+    const localFile = path.join(process.cwd(), '.data', 'audit_trail.json')
+    if (fs.existsSync(localFile)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(localFile, 'utf-8'))
+        return (raw as Record<string, unknown>[]).map(r => ({
+          id: String(r.id),
+          timestamp: String(r.timestamp),
+          user_id: r.user_id ? String(r.user_id) : 'sys-001',
+          user_name: String(r.user_name || 'Petugas SO'),
+          user_email: r.user_email ? String(r.user_email) : null,
+          user_role: r.user_role ? String(r.user_role) : null,
+          action: String(r.action),
+          entity_type: String(r.entity_type || 'SO_SESSION'),
+          entity_id: String(r.entity_id || '-'),
+          entity_label: String(r.entity_id || 'Sesi SO'),
+          description: String(r.action_label || 'Aksi sistem'),
+          before_value: (r.before_value as Record<string, unknown>) || null,
+          after_value: (r.after_value as Record<string, unknown>) || null,
+          ip_address: r.ip_address ? String(r.ip_address) : null,
+          user_agent: r.user_agent ? String(r.user_agent) : null
+        }))
+      } catch {
+        // ignore
+      }
+    }
+    return []
+  }
+
+  /** Writes an export event to audit_logs. Failures are logged, never thrown. */
+  static async logExport(
+    supabase: SupabaseClient,
+    params: {
+      userId: string
+      entityId: string
+      description: string
+      details: Record<string, unknown>
+      ip: string | null
+      userAgent: string | null
+    }
+  ) {
+    const { error } = await supabase.from('audit_logs').insert({
+      user_id: params.userId,
+      action: 'REPORT_EXPORTED',
+      entity_type: 'report',
+      entity_id: params.entityId,
+      before_value: null,
+      after_value: { description: params.description, ...params.details },
+      ip_address: params.ip,
+      user_agent: params.userAgent
+    })
+    if (error) console.warn('Audit log for export was not recorded:', error.message)
+  }
+
+  // ============================================================
+  // Exports
+  // ============================================================
+
+  static async generateSessionExcel(session: SessionDetail): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook()
-    const worksheet = workbook.addWorksheet(`Laporan ${session.session_code}`)
+    const ws = workbook.addWorksheet(`Laporan ${session.session_code}`.slice(0, 31))
 
-    // Header Title
-    worksheet.mergeCells('A1:H1')
-    const titleCell = worksheet.getCell('A1')
-    titleCell.value = `REKONSILIASI HASIL STOCK OPNAME - ${session.session_code}`
-    titleCell.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } }
-    titleCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFC2410C' } // Stockify orange theme
-    }
-    titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
-    worksheet.getRow(1).height = 36
+    ws.mergeCells('A1:I1')
+    const title = ws.getCell('A1')
+    title.value = `REKONSILIASI HASIL STOCK OPNAME - ${session.session_code}`
+    title.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } }
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC2410C' } }
+    title.alignment = { horizontal: 'center', vertical: 'middle' }
+    ws.getRow(1).height = 36
 
-    // Session Meta Info
-    worksheet.getCell('A3').value = 'Kode Sesi:'
-    worksheet.getCell('B3').value = session.session_code
-    worksheet.getCell('A4').value = 'Kategori Produk:'
-    worksheet.getCell('B4').value = session.category_name
-    worksheet.getCell('A5').value = 'Lokasi Rak Toko:'
-    worksheet.getCell('B5').value = session.zone_location
+    const meta: [string, string, string, string, string, string][] = [
+      [
+        'Kode Sesi:', session.session_code,
+        'Mulai:', formatWib(session.start_time),
+        'Akurasi Fisik:', session.accuracy_pct === null ? '-' : `${session.accuracy_pct}%`
+      ],
+      [
+        'Kategori:', session.category_name,
+        'Selesai:', session.end_time ? formatWib(session.end_time) : '-',
+        'Selisih Bersih:', `${signed(session.variance_units)} pcs`
+      ],
+      [
+        'Status:', SESSION_STATUS_LABEL[session.status],
+        'Petugas:', session.officer_names.join(', ') || '-',
+        'Defisit / Surplus:', `-${session.deficit_units} / +${session.surplus_units} pcs`
+      ]
+    ]
+    meta.forEach((m, i) => {
+      const r = 3 + i
+      ws.getCell(`A${r}`).value = m[0]
+      ws.getCell(`B${r}`).value = m[1]
+      ws.getCell(`D${r}`).value = m[2]
+      ws.getCell(`E${r}`).value = m[3]
+      ws.getCell(`G${r}`).value = m[4]
+      ws.getCell(`H${r}`).value = m[5]
+      ;['A', 'D', 'G'].forEach(c => (ws.getCell(`${c}${r}`).font = { bold: true }))
+    })
 
-    worksheet.getCell('D3').value = 'Waktu Pelaksanaan:'
-    worksheet.getCell('E3').value = session.formatted_date
-    worksheet.getCell('D4').value = 'Petugas SO:'
-    worksheet.getCell('E4').value = session.officers
-    worksheet.getCell('D5').value = 'Status Rekonsiliasi:'
-    worksheet.getCell('E5').value = session.status
-
-    worksheet.getCell('G3').value = 'Akurasi Fisik:'
-    worksheet.getCell('H3').value = `${session.accuracy_pct}%`
-    worksheet.getCell('G4').value = 'Total Unit:'
-    worksheet.getCell('H4').value = `${session.total_units_verified.toLocaleString('id-ID')} Pcs`
-    worksheet.getCell('G5').value = 'Dampak Finansial:'
-    worksheet.getCell('H5').value = session.financial_impact === 0 
-      ? 'Rp 0 (Zero Loss)' 
-      : `${session.financial_impact < 0 ? '-' : '+'}Rp ${Math.abs(session.financial_impact).toLocaleString('id-ID')}`
-
-    // Table Columns
-    worksheet.columns = [
-      { header: 'No', key: 'no', width: 6 },
-      { header: 'Barcode SKU', key: 'barcode', width: 18 },
-      { header: 'Nama Produk SKU', key: 'product_name', width: 38 },
-      { header: 'Lokasi Rak', key: 'shelf_location', width: 14 },
-      { header: 'Stok Sistem', key: 'system_stock', width: 14 },
-      { header: 'Stok Fisik', key: 'physical_stock', width: 14 },
-      { header: 'Selisih (Unit)', key: 'variance', width: 14 },
-      { header: 'Status Verifikasi', key: 'status', width: 18 }
+    ws.columns = [
+      { key: 'no', width: 6 },
+      { key: 'barcode', width: 18 },
+      { key: 'product_name', width: 38 },
+      { key: 'shelf_location', width: 14 },
+      { key: 'system_stock', width: 13 },
+      { key: 'physical_stock', width: 13 },
+      { key: 'variance', width: 13 },
+      { key: 'status', width: 16 },
+      { key: 'counted_by', width: 22 }
     ]
 
-    const headerRow = worksheet.getRow(7)
-    headerRow.values = [
-      'No',
-      'Barcode SKU',
-      'Nama Produk SKU',
-      'Lokasi Rak',
-      'Stok Sistem',
-      'Stok Fisik',
-      'Selisih (Unit)',
-      'Status Verifikasi'
-    ]
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF1E293B' }
-    }
-    headerRow.alignment = { horizontal: 'center', vertical: 'middle' }
-    headerRow.height = 28
+    const header = ws.getRow(7)
+    header.values = ['No', 'Barcode', 'Nama Produk', 'Lokasi Rak', 'Stok Sistem', 'Stok Fisik', 'Selisih', 'Status', 'Dihitung Oleh']
+    header.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }
+    header.alignment = { horizontal: 'center', vertical: 'middle' }
+    header.height = 26
 
-    const items = session.items || []
-    items.forEach((item, idx) => {
-      const row = worksheet.addRow({
+    session.items.forEach((item, idx) => {
+      const row = ws.addRow({
         no: idx + 1,
         barcode: item.barcode,
         product_name: item.product_name,
-        shelf_location: item.shelf_location,
+        shelf_location: item.shelf_location ?? '-',
         system_stock: item.system_stock,
-        physical_stock: item.physical_stock,
-        variance: item.variance,
-        status: item.status
+        physical_stock: item.physical_stock ?? '-',
+        variance: item.variance ?? '-',
+        status: item.status,
+        counted_by: item.counted_by_name ?? '-'
       })
-
-      row.alignment = { vertical: 'middle' }
-      row.getCell('no').alignment = { horizontal: 'center' }
-      row.getCell('shelf_location').alignment = { horizontal: 'center' }
-      row.getCell('system_stock').alignment = { horizontal: 'right' }
-      row.getCell('physical_stock').alignment = { horizontal: 'right' }
-      row.getCell('variance').alignment = { horizontal: 'right' }
-      row.getCell('status').alignment = { horizontal: 'center' }
-
+      const statusCell = row.getCell('status')
       if (item.status === 'Defisit') {
-        row.getCell('status').fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFEE2E2' }
-        }
-        row.getCell('status').font = { color: { argb: 'FFDC2626' }, bold: true }
+        statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } }
+        statusCell.font = { color: { argb: 'FFDC2626' }, bold: true }
       } else if (item.status === 'Surplus') {
-        row.getCell('status').fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFD1FAE5' }
-        }
-        row.getCell('status').font = { color: { argb: 'FF059669' }, bold: true }
-      } else {
-        row.getCell('status').font = { color: { argb: 'FF059669' }, bold: true }
+        statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }
+        statusCell.font = { color: { argb: 'FFB45309' }, bold: true }
+      } else if (item.status === 'Match') {
+        statusCell.font = { color: { argb: 'FF059669' }, bold: true }
       }
     })
 
-    const buffer = await workbook.xlsx.writeBuffer()
-    return Buffer.from(buffer)
+    return Buffer.from(await workbook.xlsx.writeBuffer())
   }
 
-  /**
-   * Generate Full Immutable Audit Trail Report (.xlsx)
-   */
-  static async generateAuditTrailExcel(): Promise<Buffer> {
+  static async generateAuditTrailExcel(logs: AuditTrailLog[]): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook()
-    const worksheet = workbook.addWorksheet('Immutable Audit Trail')
+    const ws = workbook.addWorksheet('Audit Trail')
 
-    worksheet.mergeCells('A1:G1')
-    const titleCell = worksheet.getCell('A1')
-    titleCell.value = 'STOCKIFY INVENTORY OPS - IMMUTABLE AUDIT TRAIL LOG'
-    titleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }
-    titleCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF991B1B' }
-    }
-    titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
-    worksheet.getRow(1).height = 32
+    ws.mergeCells('A1:H1')
+    const title = ws.getCell('A1')
+    title.value = `AUDIT TRAIL STOCK OPNAME (${logs.length} catatan)`
+    title.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF991B1B' } }
+    title.alignment = { horizontal: 'center', vertical: 'middle' }
+    ws.getRow(1).height = 32
 
-    worksheet.columns = [
-      { header: 'No', key: 'no', width: 6 },
-      { header: 'Waktu (WIB)', key: 'timestamp', width: 22 },
-      { header: 'Pengguna / Petugas', key: 'user', width: 26 },
-      { header: 'Tipe Aksi', key: 'action', width: 22 },
-      { header: 'Deskripsi Aktivitas', key: 'description', width: 38 },
-      { header: 'ID Entitas Target', key: 'entity', width: 20 },
-      { header: 'Alamat IP & Perangkat', key: 'device', width: 32 }
+    ws.columns = [
+      { key: 'no', width: 6 },
+      { key: 'timestamp', width: 22 },
+      { key: 'user', width: 26 },
+      { key: 'action', width: 18 },
+      { key: 'entity_type', width: 14 },
+      { key: 'description', width: 46 },
+      { key: 'entity', width: 32 },
+      { key: 'device', width: 40 }
     ]
+    const header = ws.getRow(3)
+    header.values = ['No', 'Waktu (WIB)', 'Pengguna', 'Aksi', 'Entitas', 'Deskripsi', 'Target', 'IP / Perangkat']
+    header.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } }
+    header.height = 24
 
-    const headerRow = worksheet.getRow(3)
-    headerRow.values = [
-      'No',
-      'Waktu (WIB)',
-      'Pengguna / Petugas',
-      'Tipe Aksi',
-      'Deskripsi Aktivitas',
-      'ID Entitas Target',
-      'Alamat IP & Perangkat'
-    ]
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF334155' }
-    }
-    headerRow.height = 26
-
-    const logs = readLocalAuditTrail()
-    logs.forEach((log, idx) => {
-      worksheet.addRow({
+    logs.forEach((l, idx) =>
+      ws.addRow({
         no: idx + 1,
-        timestamp: log.formatted_time,
-        user: `${log.user_name} (${log.user_role})`,
-        action: log.action,
-        description: log.action_label,
-        entity: log.entity_id,
-        device: `${log.ip_address} | ${log.user_agent}`
+        timestamp: formatWib(l.timestamp, true),
+        user: l.user_role ? `${l.user_name} (${l.user_role})` : l.user_name,
+        action: l.action,
+        entity_type: l.entity_type,
+        description: l.description,
+        entity: l.entity_label,
+        device: [l.ip_address, l.user_agent].filter(Boolean).join(' | ') || '-'
       })
-    })
+    )
 
-    const buffer = await workbook.xlsx.writeBuffer()
-    return Buffer.from(buffer)
+    return Buffer.from(await workbook.xlsx.writeBuffer())
   }
 
-  /**
-   * Generate Audit Trail (.csv)
-   */
-  static generateAuditTrailCSV(): string {
-    const logs = readLocalAuditTrail()
-    const headers = ['Waktu', 'Pengguna', 'Email', 'Peran', 'Aksi', 'Keterangan', 'Entitas', 'IP Address', 'User Agent']
-    const rows = logs.map(l => [
-      `"${l.formatted_time}"`,
-      `"${l.user_name.replace(/"/g, '""')}"`,
-      `"${l.user_email}"`,
-      `"${l.user_role}"`,
-      `"${l.action}"`,
-      `"${l.action_label.replace(/"/g, '""')}"`,
-      `"${l.entity_id}"`,
-      `"${l.ip_address}"`,
-      `"${l.user_agent.replace(/"/g, '""')}"`
-    ])
-
-    return [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n')
+  static generateAuditTrailCSV(logs: AuditTrailLog[]): string {
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const headers = ['Waktu (WIB)', 'Pengguna', 'Email', 'Peran', 'Aksi', 'Entitas', 'Deskripsi', 'Target', 'ID Entitas', 'IP Address', 'User Agent']
+    const rows = logs.map(l =>
+      [
+        formatWib(l.timestamp, true),
+        l.user_name,
+        l.user_email,
+        l.user_role,
+        l.action,
+        l.entity_type,
+        l.description,
+        l.entity_label,
+        l.entity_id,
+        l.ip_address,
+        l.user_agent
+      ].map(esc)
+    )
+    // BOM so Excel opens UTF-8 names correctly
+    return '\uFEFF' + [headers.map(esc).join(','), ...rows.map(r => r.join(','))].join('\r\n')
   }
+}
+
+export { RepositoryError }
+
+function signed(n: number) {
+  return `${n > 0 ? '+' : ''}${n}`
+}
+
+function formatWib(iso: string, withSeconds = false) {
+  return (
+    new Date(iso).toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      ...(withSeconds ? { second: '2-digit' } : {})
+    }) + ' WIB'
+  )
 }
