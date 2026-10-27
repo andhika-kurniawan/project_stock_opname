@@ -707,7 +707,7 @@ export class HistoryRepository {
               l =>
                 l.description.toLowerCase().includes(sq) ||
                 l.user_name.toLowerCase().includes(sq) ||
-                l.entity_id.toLowerCase().includes(sq) ||
+                (l.entity_id ? l.entity_id.toLowerCase().includes(sq) : false) ||
                 l.action.toLowerCase().includes(sq)
             )
           }

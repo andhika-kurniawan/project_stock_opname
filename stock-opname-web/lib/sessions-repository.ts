@@ -43,6 +43,33 @@ export interface MasterCategory {
   description?: string
 }
 
+export interface DbSessionRecord {
+  id: string
+  session_code: string
+  category_id: string
+  user_id: string
+  status: string
+  start_time: string
+  end_time: string | null
+  total_items: number
+  counted_items: number
+  notes: string | null
+  categories?: { name?: string } | null
+  users?: { full_name?: string } | null
+}
+
+export interface DbItemRecord {
+  id: string
+  session_id: string
+  product_id: string
+  system_stock: number
+  physical_stock: number | null
+  variance: number | null
+  is_counted: boolean
+  counted_at?: string | null
+  products?: { barcode?: string; name?: string } | null
+}
+
 export interface MasterOfficer {
   id: string
   full_name: string
@@ -442,6 +469,18 @@ export class SessionsRepository {
   static async getSessionItems(sessionId: string): Promise<SessionItem[]> {
     try {
       const supabase = createClient()
+      let resolvedId = sessionId
+      if (sessionId.startsWith('SO-') || !sessionId.includes('-') || sessionId.length < 32) {
+        const { data: sRow } = await supabase
+          .from('so_sessions')
+          .select('id')
+          .or(`id.eq.${sessionId},session_code.eq.${sessionId}`)
+          .maybeSingle()
+        if (sRow && (sRow as { id: string }).id) {
+          resolvedId = (sRow as { id: string }).id
+        }
+      }
+
       const { data, error } = await supabase
         .from('so_items')
         .select(`
@@ -456,7 +495,7 @@ export class SessionsRepository {
           products:product_id (barcode, name, shelf_location, categories:category_id (name)),
           users:counted_by (full_name)
         `)
-        .eq('session_id', sessionId)
+        .eq('session_id', resolvedId)
         .order('counted_at', { ascending: false })
 
       if (!error && data && data.length > 0) {
@@ -486,6 +525,55 @@ export class SessionsRepository {
           counted_at: item.counted_at,
           user: item.users?.full_name || '-'
         }))
+      }
+
+      // If session exists in Supabase but has no so_items yet, auto-populate from category products
+      if (!error && (!data || data.length === 0)) {
+        const { data: sessRow } = await supabase
+          .from('so_sessions')
+          .select('id, category_id')
+          .eq('id', resolvedId)
+          .maybeSingle()
+
+        if (sessRow && (sessRow as { category_id?: string }).category_id) {
+          const catId = (sessRow as { category_id: string }).category_id
+          const { data: prods } = await supabase
+            .from('products')
+            .select('id, barcode, name, system_stock, shelf_location, categories:category_id (name)')
+            .eq('category_id', catId)
+
+          if (prods && prods.length > 0) {
+            const toInsert = prods.map(p => ({
+              session_id: resolvedId,
+              product_id: p.id,
+              system_stock: p.system_stock,
+              physical_stock: null,
+              is_counted: false
+            }))
+            const { data: inserted } = await supabase.from('so_items').insert(toInsert).select()
+            await supabase.from('so_sessions').update({ total_items: toInsert.length }).eq('id', resolvedId)
+
+            const insertedList = (inserted ?? []) as Array<{ id: string; product_id: string }>
+            return prods.map(p => {
+              const matched = insertedList.find(i => i.product_id === p.id)
+              return {
+                id: matched?.id || p.id,
+                session_id: resolvedId,
+                product_id: p.id,
+                barcode: p.barcode,
+                name: p.name,
+                category: (p.categories as { name?: string })?.name || '-',
+                shelf_location: p.shelf_location || '-',
+                system_stock: p.system_stock,
+                physical_stock: null,
+                variance: null,
+                is_counted: false,
+                counted_at: null,
+                user: '-'
+              }
+            })
+          }
+        }
       }
     } catch {
       // Fallback to local
@@ -606,6 +694,102 @@ export class SessionsRepository {
    * Update physical count of an item in an active session
    */
   static async updateItemScan(sessionId: string, itemId: string, physicalCount: number, officerName = 'Petugas SO') {
+    const supabase = createClient() as unknown as SupabaseClient
+
+    // 1. Try finding and updating in Supabase first
+    let dbItem: DbItemRecord | null = null
+
+    try {
+      const { data } = await supabase
+        .from('so_items')
+        .select(`
+          id, session_id, product_id, system_stock, physical_stock, variance, is_counted,
+          products:product_id (barcode, name)
+        `)
+        .eq('id', itemId)
+        .maybeSingle()
+
+      if (data) dbItem = data as unknown as DbItemRecord
+    } catch {
+      // ignore
+    }
+
+    if (dbItem) {
+      const variance = physicalCount - dbItem.system_stock
+      const countedAt = new Date().toISOString()
+
+      await supabase
+        .from('so_items')
+        .update({
+          physical_stock: physicalCount,
+          variance,
+          is_counted: true,
+          counted_at: countedAt
+        })
+        .eq('id', dbItem.id)
+
+      const { count: countedCount } = await supabase
+        .from('so_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_id', dbItem.session_id)
+        .eq('is_counted', true)
+
+      if (countedCount !== null) {
+        await supabase
+          .from('so_sessions')
+          .update({ counted_items: countedCount })
+          .eq('id', dbItem.session_id)
+      }
+
+      await supabase.from('audit_logs').insert({
+        action: 'ITEM_SCANNED',
+        entity_type: 'so_items',
+        entity_id: dbItem.products?.barcode || dbItem.id,
+        after_value: {
+          item_id: dbItem.id,
+          barcode: dbItem.products?.barcode,
+          name: dbItem.products?.name,
+          system_stock: dbItem.system_stock,
+          physical_stock: physicalCount,
+          variance,
+          officer: officerName
+        }
+      })
+
+      // Also sync to local active sessions if exists
+      const localSessions = readLocalActiveSessions()
+      const locSess = localSessions.find(s => s.id === sessionId || s.session_code === sessionId || s.id === dbItem?.session_id)
+      if (locSess) {
+        const locItem = locSess.items.find(i => i.id === itemId || i.barcode === dbItem?.products?.barcode)
+        if (locItem) {
+          locItem.physical_stock = physicalCount
+          locItem.variance = variance
+          locItem.is_counted = true
+          locItem.counted_at = countedAt
+          locItem.user = officerName
+          locSess.counted_items = locSess.items.filter(i => i.is_counted).length
+          writeLocalActiveSessions(localSessions)
+        }
+      }
+
+      return {
+        item: {
+          id: dbItem.id,
+          session_id: dbItem.session_id,
+          name: dbItem.products?.name || 'Item',
+          barcode: dbItem.products?.barcode || '',
+          system_stock: dbItem.system_stock,
+          physical_stock: physicalCount,
+          variance,
+          is_counted: true,
+          counted_at: countedAt,
+          user: officerName
+        },
+        session: { id: dbItem.session_id, counted_items: countedCount ?? 1 }
+      }
+    }
+
+    // 2. Fall back to local active sessions
     const localSessions = readLocalActiveSessions()
     const session = localSessions.find(s => s.id === sessionId || s.session_code === sessionId)
     if (!session) throw new Error('Sesi tidak ditemukan')
@@ -626,36 +810,6 @@ export class SessionsRepository {
 
     writeLocalActiveSessions(localSessions)
 
-    // Try Supabase update
-    try {
-      const supabase = createClient() as unknown as SupabaseClient
-      await supabase
-        .from('so_items')
-        .update({
-          physical_stock: physicalCount,
-          variance: item.variance,
-          is_counted: true,
-          counted_at: item.counted_at
-        })
-        .eq('id', itemId)
-
-      await supabase
-        .from('so_sessions')
-        .update({
-          counted_items: session.counted_items
-        })
-        .eq('id', session.id)
-
-      await supabase.from('audit_logs').insert({
-        action: 'ITEM_SCANNED',
-        entity_type: 'SO_ITEM',
-        entity_id: item.barcode,
-        after_value: { barcode: item.barcode, name: item.name, system_stock: item.system_stock, physical_stock: physicalCount, variance: item.variance }
-      })
-    } catch {
-      // Ignored
-    }
-
     return { item, session }
   }
 
@@ -663,6 +817,159 @@ export class SessionsRepository {
    * Complete active session and move to completed history
    */
   static async completeSession(sessionId: string) {
+    const supabase = createClient() as unknown as SupabaseClient
+
+    // 1. Try finding in Supabase first
+    let dbSession: DbSessionRecord | null = null
+
+    try {
+      const { data } = await supabase
+        .from('so_sessions')
+        .select(`
+          id, session_code, category_id, user_id, status, start_time, end_time, total_items, counted_items, notes,
+          categories:category_id (name),
+          users:user_id (full_name)
+        `)
+        .or(`id.eq.${sessionId},session_code.eq.${sessionId}`)
+        .maybeSingle()
+
+      if (data) {
+        dbSession = data as unknown as DbSessionRecord
+      }
+    } catch {
+      // Supabase query error
+    }
+
+    if (dbSession) {
+      const endTime = new Date().toISOString()
+
+      // Update session status in Supabase
+      await supabase
+        .from('so_sessions')
+        .update({ status: 'completed', end_time: endTime })
+        .eq('id', dbSession.id)
+
+      // Fetch items for variance and accuracy calculation
+      const { data: dbItems } = await supabase
+        .from('so_items')
+        .select(`
+          id, session_id, product_id, system_stock, physical_stock, variance, is_counted, counted_at, counted_by,
+          products:product_id (barcode, name, shelf_location, categories:category_id (name)),
+          users:counted_by (full_name)
+        `)
+        .eq('session_id', dbSession.id)
+
+      const items = (dbItems ?? []) as unknown as Array<{
+        id: string
+        session_id: string
+        product_id: string
+        system_stock: number
+        physical_stock: number | null
+        variance: number | null
+        is_counted: boolean
+        counted_at: string | null
+        products?: { barcode?: string; name?: string; shelf_location?: string; categories?: { name?: string } | null } | null
+        users?: { full_name?: string } | null
+      }>
+
+      const totalUnitsVerified = items.reduce((acc, i) => acc + (i.physical_stock || 0), 0)
+      const netVariance = items.reduce((acc, i) => acc + (i.variance || 0), 0)
+      const matchedCount = items.filter(i => i.is_counted && i.variance === 0).length
+      const accuracyPct = items.length > 0 ? Math.round((matchedCount / items.length) * 100) : 100
+
+      // Log to audit_logs
+      await supabase.from('audit_logs').insert({
+        action: 'SESSION_COMPLETED',
+        entity_type: 'so_sessions',
+        entity_id: dbSession.session_code,
+        after_value: {
+          session_code: dbSession.session_code,
+          status: 'completed',
+          end_time: endTime,
+          total_items: items.length || dbSession.total_items,
+          counted_items: dbSession.counted_items,
+          accuracy_pct: accuracyPct,
+          variance_units: netVariance
+        }
+      })
+
+      // Also clean up local active sessions if present
+      const localSessions = readLocalActiveSessions()
+      const localIdx = localSessions.findIndex(s => s.id === sessionId || s.session_code === sessionId)
+      if (localIdx !== -1) {
+        localSessions.splice(localIdx, 1)
+        writeLocalActiveSessions(localSessions)
+      }
+
+      // Sync to completed_sessions.json so Riwayat & Audit Trail can display it immediately
+      try {
+        ensureDataFiles()
+        let completed: Record<string, unknown>[] = []
+        if (fs.existsSync(COMPLETED_SESSIONS_FILE)) {
+          completed = JSON.parse(fs.readFileSync(COMPLETED_SESSIONS_FILE, 'utf-8'))
+        }
+        completed.unshift({
+          id: dbSession.id,
+          session_code: dbSession.session_code,
+          category_id: dbSession.category_id,
+          category_name: dbSession.categories?.name || 'Kategori Umum',
+          zone_location: 'Zona Utama',
+          status: 'Approved & Closed',
+          start_time: dbSession.start_time,
+          end_time: endTime,
+          formatted_date: new Date(dbSession.start_time).toLocaleDateString('id-ID'),
+          duration_str: '45m',
+          officers: dbSession.users?.full_name || 'Petugas SO',
+          officer_ids: [dbSession.user_id],
+          total_sku: items.length || dbSession.total_items,
+          counted_sku: dbSession.counted_items,
+          accuracy_pct: accuracyPct,
+          total_units_verified: totalUnitsVerified,
+          variance_units: netVariance,
+          variance_type: netVariance === 0 ? 'zero' : netVariance < 0 ? 'deficit' : 'surplus',
+          financial_impact: netVariance * 15000,
+          notes: dbSession.notes,
+          icon_type: netVariance === 0 ? 'green' : netVariance < 0 ? 'red' : 'orange',
+          items: items.map(i => ({
+            id: i.id,
+            barcode: i.products?.barcode || '-',
+            product_name: i.products?.name || '-',
+            category_name: i.products?.categories?.name || dbSession?.categories?.name || '-',
+            shelf_location: i.products?.shelf_location || '-',
+            system_stock: i.system_stock,
+            physical_stock: i.physical_stock || 0,
+            variance: i.variance || 0,
+            variance_pct: 0,
+            status: (i.variance || 0) === 0 ? 'Match' : (i.variance || 0) < 0 ? 'Defisit' : 'Surplus',
+            counted_by: i.users?.full_name || '-',
+            counted_at: i.counted_at,
+            unit_price: 15000
+          }))
+        })
+        fs.writeFileSync(COMPLETED_SESSIONS_FILE, JSON.stringify(completed, null, 2), 'utf-8')
+      } catch (e) {
+        console.warn('Could not sync completed_sessions.json:', e)
+      }
+
+      return {
+        id: dbSession.id,
+        session_code: dbSession.session_code,
+        category_id: dbSession.category_id,
+        category_name: dbSession.categories?.name || 'Kategori Umum',
+        user_id: dbSession.user_id,
+        officer_name: dbSession.users?.full_name || 'Petugas SO',
+        officer_username: 'officer',
+        status: 'completed',
+        start_time: dbSession.start_time,
+        end_time: endTime,
+        total_items: items.length || dbSession.total_items,
+        counted_items: dbSession.counted_items,
+        notes: dbSession.notes,
+        items: []
+      }
+    }
+
+    // 2. Fall back to local active sessions
     const localSessions = readLocalActiveSessions()
     const index = localSessions.findIndex(s => s.id === sessionId || s.session_code === sessionId)
     if (index === -1) throw new Error('Sesi tidak ditemukan')
@@ -731,24 +1038,6 @@ export class SessionsRepository {
       console.warn('Could not sync to completed_sessions:', e)
     }
 
-    // Try Supabase update
-    try {
-      const supabase = createClient() as unknown as SupabaseClient
-      await supabase
-        .from('so_sessions')
-        .update({ status: 'completed', end_time: session.end_time })
-        .eq('id', session.id)
-
-      await supabase.from('audit_logs').insert({
-        action: 'SESSION_COMPLETED',
-        entity_type: 'SO_SESSION',
-        entity_id: session.session_code,
-        after_value: { session_code: session.session_code, status: 'completed' }
-      })
-    } catch {
-      // Ignored
-    }
-
     return session
   }
 
@@ -756,6 +1045,46 @@ export class SessionsRepository {
    * Cancel active session
    */
   static async cancelSession(sessionId: string) {
+    const supabase = createClient() as unknown as SupabaseClient
+
+    // 1. Try finding in Supabase first
+    let dbSession: { id: string; session_code: string } | null = null
+    try {
+      const { data } = await supabase
+        .from('so_sessions')
+        .select('id, session_code')
+        .or(`id.eq.${sessionId},session_code.eq.${sessionId}`)
+        .maybeSingle()
+      if (data) dbSession = data as { id: string; session_code: string }
+    } catch {
+      // ignore
+    }
+
+    if (dbSession) {
+      const endTime = new Date().toISOString()
+      await supabase
+        .from('so_sessions')
+        .update({ status: 'cancelled', end_time: endTime })
+        .eq('id', dbSession.id)
+
+      await supabase.from('audit_logs').insert({
+        action: 'SESSION_CANCELLED',
+        entity_type: 'so_sessions',
+        entity_id: dbSession.session_code,
+        after_value: { session_code: dbSession.session_code, status: 'cancelled', end_time: endTime }
+      })
+
+      const localSessions = readLocalActiveSessions()
+      const localIdx = localSessions.findIndex(s => s.id === sessionId || s.session_code === sessionId)
+      if (localIdx !== -1) {
+        localSessions.splice(localIdx, 1)
+        writeLocalActiveSessions(localSessions)
+      }
+
+      return { id: dbSession.id, session_code: dbSession.session_code, status: 'cancelled' }
+    }
+
+    // 2. Check local
     const localSessions = readLocalActiveSessions()
     const index = localSessions.findIndex(s => s.id === sessionId || s.session_code === sessionId)
     if (index === -1) throw new Error('Sesi tidak ditemukan')
@@ -766,24 +1095,6 @@ export class SessionsRepository {
 
     localSessions.splice(index, 1)
     writeLocalActiveSessions(localSessions)
-
-    // Try Supabase
-    try {
-      const supabase = createClient() as unknown as SupabaseClient
-      await supabase
-        .from('so_sessions')
-        .update({ status: 'cancelled', end_time: session.end_time })
-        .eq('id', session.id)
-
-      await supabase.from('audit_logs').insert({
-        action: 'SESSION_CANCELLED',
-        entity_type: 'SO_SESSION',
-        entity_id: session.session_code,
-        after_value: { session_code: session.session_code, status: 'cancelled' }
-      })
-    } catch {
-      // Ignored
-    }
 
     return session
   }
