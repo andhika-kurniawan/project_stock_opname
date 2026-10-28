@@ -919,6 +919,105 @@ export class HistoryRepository {
     return Buffer.from(await workbook.xlsx.writeBuffer())
   }
 
+  static async generateSessionsSummaryExcel(sessions: CompletedSOSession[], items?: any[]): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook()
+    const ws = workbook.addWorksheet('Rekap Sesi Stock Opname')
+
+    ws.mergeCells('A1:L1')
+    const title = ws.getCell('A1')
+    title.value = `REKAPITULASI SESI STOCK OPNAME (${sessions.length} Sesi Selesai)`
+    title.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC2410C' } }
+    title.alignment = { horizontal: 'center', vertical: 'middle' }
+    ws.getRow(1).height = 32
+
+    ws.columns = [
+      { key: 'no', width: 6 },
+      { key: 'code', width: 20 },
+      { key: 'category', width: 28 },
+      { key: 'start', width: 20 },
+      { key: 'end', width: 20 },
+      { key: 'officers', width: 25 },
+      { key: 'total_sku', width: 12 },
+      { key: 'counted_sku', width: 14 },
+      { key: 'match', width: 10 },
+      { key: 'deficit', width: 10 },
+      { key: 'surplus', width: 10 },
+      { key: 'accuracy', width: 14 }
+    ]
+
+    const header = ws.getRow(3)
+    header.values = [
+      'No',
+      'Kode Sesi',
+      'Kategori',
+      'Waktu Mulai',
+      'Waktu Selesai',
+      'Petugas',
+      'Total SKU',
+      'SKU Dihitung',
+      'Cocok',
+      'Defisit',
+      'Surplus',
+      'Akurasi'
+    ]
+    header.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }
+    header.alignment = { horizontal: 'center', vertical: 'middle' }
+    header.height = 24
+
+    sessions.forEach((s, idx) => {
+      ws.addRow({
+        no: idx + 1,
+        code: s.session_code,
+        category: s.category_name,
+        start: formatWib(s.start_time),
+        end: s.end_time ? formatWib(s.end_time) : '-',
+        officers: s.officer_names.join(', ') || '-',
+        total_sku: s.total_sku,
+        counted_sku: s.counted_sku,
+        match: s.matched_sku,
+        deficit: s.deficit_units,
+        surplus: s.surplus_units,
+        accuracy: s.accuracy_pct === null ? '-' : `${s.accuracy_pct}%`
+      })
+    })
+
+    if (items && items.length > 0) {
+      const wsItems = workbook.addWorksheet('Detail Semua Item')
+      wsItems.columns = [
+        { key: 'no', width: 6 },
+        { key: 'barcode', width: 18 },
+        { key: 'name', width: 35 },
+        { key: 'category', width: 25 },
+        { key: 'system_stock', width: 14 },
+        { key: 'physical_stock', width: 14 },
+        { key: 'variance', width: 14 },
+        { key: 'status', width: 16 }
+      ]
+      const itemHeader = wsItems.getRow(1)
+      itemHeader.values = ['No', 'Barcode', 'Nama Produk', 'Kategori', 'Stok Sistem', 'Stok Fisik', 'Selisih', 'Status']
+      itemHeader.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+      itemHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }
+      itemHeader.alignment = { horizontal: 'center', vertical: 'middle' }
+
+      items.forEach((item, idx) => {
+        wsItems.addRow({
+          no: idx + 1,
+          barcode: item.barcode || '-',
+          name: item.name || '-',
+          category: item.category || '-',
+          system_stock: item.system_stock,
+          physical_stock: item.physical_stock ?? '-',
+          variance: item.variance ?? '-',
+          status: item.variance === 0 ? 'Match' : (item.variance !== null && item.variance < 0 ? 'Defisit' : (item.variance !== null && item.variance > 0 ? 'Surplus' : 'Belum Dihitung'))
+        })
+      })
+    }
+
+    return Buffer.from(await workbook.xlsx.writeBuffer())
+  }
+
   static async generateAuditTrailExcel(logs: AuditTrailLog[]): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook()
     const ws = workbook.addWorksheet('Audit Trail')

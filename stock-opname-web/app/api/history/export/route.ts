@@ -14,6 +14,8 @@ function safeFilename(s: string) {
   return s.replace(/[^\w.-]+/g, '_').replace(/_+/g, '_')
 }
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const { supabase, user } = await getRouteClient()
@@ -23,6 +25,49 @@ export async function GET(request: NextRequest) {
     const type = sp.get('type') || 'audit'
     const { ip, userAgent } = clientMeta(request)
     const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+
+    if (type === 'sessions' || type === 'recap') {
+      const { sessions } = await HistoryRepository.getCompletedSessions(supabase)
+      
+      // Also fetch items for detailed sheet
+      const { data: rawItems } = await supabase
+        .from('so_items')
+        .select(`
+          id,
+          system_stock,
+          physical_stock,
+          variance,
+          products:product_id (barcode, name, categories:category_id (name))
+        `)
+        .order('updated_at', { ascending: false })
+
+      const items = (rawItems || []).map((item: any) => ({
+        barcode: item.products?.barcode || '-',
+        name: item.products?.name || '-',
+        category: item.products?.categories?.name || '-',
+        system_stock: item.system_stock,
+        physical_stock: item.physical_stock,
+        variance: item.variance
+      }))
+
+      const buffer = await HistoryRepository.generateSessionsSummaryExcel(sessions, items)
+      await HistoryRepository.logExport(supabase, {
+        userId: user.id,
+        entityId: 'all_sessions',
+        description: `Ekspor rekapitulasi sesi stock opname (.xlsx, ${sessions.length} sesi)`,
+        details: { format: 'xlsx', sessions_count: sessions.length, items_count: items.length },
+        ip,
+        userAgent
+      })
+
+      const filename = `Rekapitulasi_Stock_Opname_${today}.xlsx`
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="${filename}"`
+        }
+      })
+    }
 
     if (type === 'session') {
       const id = sp.get('id')

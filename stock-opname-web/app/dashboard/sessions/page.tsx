@@ -79,9 +79,17 @@ export default function SessionsPage() {
     category_name: '',
     user_id: '',
     officer_name: '',
-    start_time: new Date().toISOString().slice(0, 16),
+    start_time: '',
     notes: ''
   })
+
+  const handleOpenCreateModal = useCallback(() => {
+    setNewSessionForm(prev => ({
+      ...prev,
+      start_time: prev.start_time || new Date().toISOString().slice(0, 16)
+    }))
+    setIsCreateModalOpen(true)
+  }, [])
 
   // Scan/Physical Input Modal State
   const [selectedItemToScan, setSelectedItemToScan] = useState<ScanItem | null>(null)
@@ -501,7 +509,7 @@ export default function SessionsPage() {
           </button>
 
           <button 
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={handleOpenCreateModal}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FF6B35] hover:bg-[#FF4D1A] text-white rounded-xl text-xs font-bold shadow-md shadow-orange-500/20 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -561,7 +569,7 @@ export default function SessionsPage() {
             Saat ini tidak ada sesi penghitungan fisik aktif. Klik tombol di bawah untuk menjadwalkan atau memulai sesi stock opname baru.
           </p>
           <button 
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={handleOpenCreateModal}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#FF6B35] hover:bg-[#FF4D1A] text-white rounded-xl text-xs font-bold shadow-md shadow-orange-500/20 cursor-pointer"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SessionsRepository } from '@/lib/sessions-repository'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const [sessionsResult, categories, officers] = await Promise.all([
