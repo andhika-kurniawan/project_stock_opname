@@ -110,7 +110,7 @@ export interface Database {
           id: string
           session_code: string
           category_id: string
-          user_id: string
+          user_id: string | null
           status: 'active' | 'completed' | 'cancelled'
           start_time: string
           end_time: string | null
@@ -124,7 +124,7 @@ export interface Database {
           id?: string
           session_code: string
           category_id: string
-          user_id: string
+          user_id?: string | null
           status?: 'active' | 'completed' | 'cancelled'
           start_time?: string
           end_time?: string | null
@@ -138,7 +138,7 @@ export interface Database {
           id?: string
           session_code?: string
           category_id?: string
-          user_id?: string
+          user_id?: string | null
           status?: 'active' | 'completed' | 'cancelled'
           end_time?: string | null
           total_items?: number
@@ -259,8 +259,8 @@ export type ProductWithCategory = Database['public']['Tables']['products']['Row'
 }
 
 export type SessionWithRelations = Database['public']['Tables']['so_sessions']['Row'] & {
-  users: Pick<Database['public']['Tables']['users']['Row'], 'full_name' | 'username'>
-  categories: Pick<Database['public']['Tables']['categories']['Row'], 'name'>
+  users: Pick<Database['public']['Tables']['users']['Row'], 'full_name' | 'username'> | null
+  categories: Pick<Database['public']['Tables']['categories']['Row'], 'name'> | null
 }
 
 export type SOItemWithRelations = Database['public']['Tables']['so_items']['Row'] & {
@@ -291,7 +291,7 @@ export interface LoginCredentials {
 
 export interface CreateSessionDTO {
   category_id: string
-  user_id: string
+  user_id?: string | null
   notes?: string
 }
 

@@ -1,1 +1,63 @@
-[]
+[
+  {
+    "id": "c64d29a9-46a5-4910-b3d9-bc6fafd848b4",
+    "session_code": "SO-20261028-4499",
+    "category_id": "b0000000-0000-0000-0000-000000000005",
+    "category_name": "Perawatan Tubuh & Sabun Mandi",
+    "user_id": null,
+    "officer_name": "Belum Ditugaskan",
+    "officer_username": "-",
+    "status": "active",
+    "start_time": "2026-10-28T08:51:00.000Z",
+    "total_items": 3,
+    "counted_items": 0,
+    "notes": "Sesi stock opname Perawatan Tubuh & Sabun Mandi [Petugas: Terbuka/Belum Ditugaskan]",
+    "items": [
+      {
+        "id": "item-c64d29a9-46a5-4910-b3d9-bc6fafd848b4-0",
+        "session_id": "c64d29a9-46a5-4910-b3d9-bc6fafd848b4",
+        "product_id": "prod-1793202719342-0",
+        "barcode": "8992761234701",
+        "name": "Sabun Mandi Lifebuoy Total 10 85g",
+        "category": "Perawatan Tubuh & Sabun Mandi",
+        "shelf_location": "C-04-01",
+        "system_stock": 150,
+        "physical_stock": null,
+        "variance": null,
+        "is_counted": false,
+        "counted_at": null,
+        "user": "-"
+      },
+      {
+        "id": "item-c64d29a9-46a5-4910-b3d9-bc6fafd848b4-1",
+        "session_id": "c64d29a9-46a5-4910-b3d9-bc6fafd848b4",
+        "product_id": "prod-1793202719342-1",
+        "barcode": "8992761234702",
+        "name": "Shampo Pantene Anti Dandruff 290ml",
+        "category": "Perawatan Tubuh & Sabun Mandi",
+        "shelf_location": "C-05-02",
+        "system_stock": 65,
+        "physical_stock": null,
+        "variance": null,
+        "is_counted": false,
+        "counted_at": null,
+        "user": "-"
+      },
+      {
+        "id": "item-c64d29a9-46a5-4910-b3d9-bc6fafd848b4-2",
+        "session_id": "c64d29a9-46a5-4910-b3d9-bc6fafd848b4",
+        "product_id": "prod-1793202719342-2",
+        "barcode": "8992761234703",
+        "name": "Pasta Gigi Pepsodent 190g",
+        "category": "Perawatan Tubuh & Sabun Mandi",
+        "shelf_location": "C-06-01",
+        "system_stock": 180,
+        "physical_stock": null,
+        "variance": null,
+        "is_counted": false,
+        "counted_at": null,
+        "user": "-"
+      }
+    ]
+  }
+]

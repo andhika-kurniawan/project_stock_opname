@@ -8,7 +8,7 @@ export interface ActiveSession {
   session_code: string
   category_id: string
   category_name: string
-  user_id: string
+  user_id: string | null
   officer_name: string
   officer_username: string
   status: 'active' | 'completed' | 'cancelled'
@@ -47,7 +47,7 @@ export interface DbSessionRecord {
   id: string
   session_code: string
   category_id: string
-  user_id: string
+  user_id: string | null
   status: string
   start_time: string
   end_time: string | null
@@ -410,13 +410,13 @@ export class SessionsRepository {
         .eq('status', 'active')
         .order('start_time', { ascending: false })
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         sessions = (data as unknown as Array<{
           id: string
           session_code: string
           category_id: string
           categories?: { name?: string } | null
-          user_id: string
+          user_id: string | null
           users?: { full_name?: string; username?: string } | null
           status: string
           start_time: string
@@ -424,22 +424,25 @@ export class SessionsRepository {
           total_items: number
           counted_items: number
           notes: string | null
-        }>).map(s => ({
-          id: s.id,
-          session_code: s.session_code,
-          category_id: s.category_id,
-          category_name: s.categories?.name || 'Kategori Umum',
-          user_id: s.user_id,
-          officer_name: s.users?.full_name || 'Petugas SO',
-          officer_username: s.users?.username || 'officer',
-          status: 'active',
-          start_time: s.start_time,
-          end_time: s.end_time,
-          total_items: s.total_items || 0,
-          counted_items: s.counted_items || 0,
-          notes: s.notes,
-          items: []
-        }))
+        }>).map(s => {
+          const isUnassigned = !s.user_id || s.notes?.includes('[Petugas: Terbuka/Belum Ditugaskan]')
+          return {
+            id: s.id,
+            session_code: s.session_code,
+            category_id: s.category_id,
+            category_name: s.categories?.name || 'Kategori Umum',
+            user_id: isUnassigned ? null : s.user_id,
+            officer_name: isUnassigned ? 'Belum Ditugaskan' : (s.users?.full_name || 'Petugas SO'),
+            officer_username: isUnassigned ? '-' : (s.users?.username || 'officer'),
+            status: 'active',
+            start_time: s.start_time,
+            end_time: s.end_time,
+            total_items: s.total_items || 0,
+            counted_items: s.counted_items || 0,
+            notes: s.notes,
+            items: []
+          }
+        })
       } else {
         sessions = readLocalActiveSessions()
       }
@@ -599,37 +602,197 @@ export class SessionsRepository {
   static async createSession(payload: {
     category_id: string
     category_name?: string
-    user_id?: string
-    officer_name?: string
+    user_id?: string | null
+    officer_name?: string | null
     start_time?: string
     notes?: string
   }): Promise<ActiveSession> {
-    const localCategories = DEFAULT_CATEGORIES
-    const localOfficers = DEFAULT_OFFICERS
+    const supabase = createClient() as unknown as SupabaseClient
 
-    const cat = localCategories.find(c => c.id === payload.category_id || c.name === payload.category_name)
-    const categoryName = payload.category_name || cat?.name || 'Kategori Umum'
-    const categoryId = payload.category_id || cat?.id || 'cat-' + Date.now()
+    // 1. Resolve Category
+    let categoryId = payload.category_id
+    let categoryName = payload.category_name || ''
 
-    const officer = localOfficers.find(o => o.id === payload.user_id) || localOfficers[0]
-    const officerName = payload.officer_name || officer.full_name
-    const userId = payload.user_id || officer.id
+    try {
+      const { data: catData } = await supabase
+        .from('categories')
+        .select('id, name')
+        .or(`id.eq.${payload.category_id},name.eq.${payload.category_name || ''}`)
+        .maybeSingle()
+      if (catData) {
+        categoryId = (catData as { id: string; name: string }).id
+        categoryName = (catData as { id: string; name: string }).name
+      }
+    } catch {
+      // Ignore
+    }
 
-    // Generate session code format: SO-YYYYMMDD-XXXX
+    if (!categoryName) {
+      const localCat = DEFAULT_CATEGORIES.find(c => c.id === categoryId || c.name === payload.category_name)
+      categoryName = localCat?.name || payload.category_name || 'Kategori Umum'
+    }
+
+    // 2. Resolve Officer (Truly Optional)
+    let userId: string | null = null
+    let officerName = 'Belum Ditugaskan'
+    let officerUsername = '-'
+
+    if (payload.user_id && payload.user_id.trim() !== '') {
+      try {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('id, full_name, username')
+          .eq('id', payload.user_id)
+          .maybeSingle()
+        if (userData) {
+          userId = (userData as { id: string; full_name: string; username: string }).id
+          officerName = (userData as { id: string; full_name: string; username: string }).full_name
+          officerUsername = (userData as { id: string; full_name: string; username: string }).username
+        }
+      } catch {
+        // Fallback
+      }
+      if (!userId) {
+        const localOff = DEFAULT_OFFICERS.find(o => o.id === payload.user_id)
+        if (localOff) {
+          userId = localOff.id
+          officerName = localOff.full_name
+          officerUsername = localOff.username
+        }
+      }
+    }
+
+    // 3. Resolve products for this category
+    let productItems: Array<{ id: string; barcode: string; name: string; shelf_location: string; system_stock: number }> = []
+
+    try {
+      const { data: dbProds } = await supabase
+        .from('products')
+        .select('id, barcode, name, shelf_location, system_stock')
+        .eq('category_id', categoryId)
+      if (dbProds && dbProds.length > 0) {
+        productItems = dbProds as typeof productItems
+      }
+    } catch {
+      // Ignore
+    }
+
+    if (productItems.length === 0) {
+      const sample = SAMPLE_PRODUCTS_BY_CATEGORY[categoryName] || SAMPLE_PRODUCTS_BY_CATEGORY['Makanan Ringan & Biskuit'] || []
+      productItems = sample.map((p, idx) => ({
+        id: `prod-${Date.now()}-${idx}`,
+        barcode: p.barcode,
+        name: p.name,
+        shelf_location: p.shelf_location,
+        system_stock: p.system_stock
+      }))
+    }
+
+    // 4. Generate session code format: SO-YYYYMMDD-XXXX
     const now = new Date()
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '')
     const randStr = Math.floor(1000 + Math.random() * 9000).toString()
     const sessionCode = `SO-${dateStr}-${randStr}`
 
-    // Resolve products for this category
-    const sampleProducts = SAMPLE_PRODUCTS_BY_CATEGORY[categoryName] || SAMPLE_PRODUCTS_BY_CATEGORY['Makanan Ringan & Biskuit']
-    const newItems: SessionItem[] = sampleProducts.map((p, idx) => ({
-      id: `item-${Date.now()}-${idx}`,
-      session_id: '',
+    // 5. Try Supabase insert
+    let dbSession: { id: string; session_code: string } | null = null
+    const baseNotes = payload.notes || `Sesi stock opname ${categoryName}`
+    let isFallbackUnassigned = false
+
+    try {
+      const { data: sessData, error: sessErr } = await supabase
+        .from('so_sessions')
+        .insert({
+          session_code: sessionCode,
+          category_id: categoryId,
+          user_id: userId,
+          status: 'active',
+          start_time: payload.start_time || new Date().toISOString(),
+          total_items: productItems.length,
+          counted_items: 0,
+          notes: baseNotes
+        })
+        .select()
+        .single()
+
+      if (sessErr && (sessErr as { code?: string }).code === '23502') {
+        // Fallback if public.so_sessions.user_id still has NOT NULL constraint
+        const { data: adminUser } = await supabase
+          .from('users')
+          .select('id, full_name, username')
+          .eq('role', 'admin')
+          .limit(1)
+          .maybeSingle()
+
+        if (adminUser) {
+          const fallbackUserId = (adminUser as { id: string }).id
+          const taggedNotes = (baseNotes ? baseNotes + ' ' : '') + '[Petugas: Terbuka/Belum Ditugaskan]'
+          const { data: retryData, error: retryErr } = await supabase
+            .from('so_sessions')
+            .insert({
+              session_code: sessionCode,
+              category_id: categoryId,
+              user_id: fallbackUserId,
+              status: 'active',
+              start_time: payload.start_time || new Date().toISOString(),
+              total_items: productItems.length,
+              counted_items: 0,
+              notes: taggedNotes
+            })
+            .select()
+            .single()
+
+          if (!retryErr && retryData) {
+            dbSession = retryData as { id: string; session_code: string }
+            isFallbackUnassigned = true
+          }
+        }
+      } else if (!sessErr && sessData) {
+        dbSession = sessData as { id: string; session_code: string }
+      }
+    } catch (e) {
+      console.warn('Supabase session insert caught error:', e)
+    }
+
+    // 6. Populate so_items in Supabase
+    if (dbSession) {
+      try {
+        if (productItems.length > 0) {
+          const soItemsToInsert = productItems.map(p => ({
+            session_id: dbSession!.id,
+            product_id: p.id,
+            system_stock: p.system_stock,
+            physical_stock: null,
+            is_counted: false
+          }))
+          await supabase.from('so_items').insert(soItemsToInsert)
+        }
+
+        // Log audit
+        await supabase.from('audit_logs').insert({
+          action: 'SESSION_CREATED',
+          entity_type: 'SO_SESSION',
+          entity_id: sessionCode,
+          after_value: {
+            session_code: sessionCode,
+            category: categoryName,
+            officer: isFallbackUnassigned || !userId ? 'Belum Ditugaskan' : officerName
+          }
+        })
+      } catch (err) {
+        console.warn('Error creating so_items in Supabase:', err)
+      }
+    }
+
+    const finalSessionId = dbSession ? dbSession.id : `sess-${Date.now()}`
+    const finalItems: SessionItem[] = productItems.map((p, idx) => ({
+      id: `item-${finalSessionId}-${idx}`,
+      session_id: finalSessionId,
+      product_id: p.id,
       barcode: p.barcode,
       name: p.name,
       category: categoryName,
-      shelf_location: p.shelf_location,
+      shelf_location: p.shelf_location || '-',
       system_stock: p.system_stock,
       physical_stock: null,
       variance: null,
@@ -639,56 +802,19 @@ export class SessionsRepository {
     }))
 
     const newSession: ActiveSession = {
-      id: `sess-${Date.now()}`,
+      id: finalSessionId,
       session_code: sessionCode,
       category_id: categoryId,
       category_name: categoryName,
-      user_id: userId,
-      officer_name: officerName,
-      officer_username: officer.username,
+      user_id: isFallbackUnassigned ? null : userId,
+      officer_name: isFallbackUnassigned || !userId ? 'Belum Ditugaskan' : officerName,
+      officer_username: isFallbackUnassigned || !userId ? '-' : officerUsername,
       status: 'active',
       start_time: payload.start_time || new Date().toISOString(),
-      total_items: newItems.length,
+      total_items: finalItems.length,
       counted_items: 0,
-      notes: payload.notes || `Sesi stock opname ${categoryName}`,
-      items: newItems
-    }
-
-    // Set session_id on items
-    newSession.items.forEach(i => (i.session_id = newSession.id))
-
-    // Try Supabase insert
-    try {
-      const supabase = createClient() as unknown as SupabaseClient
-      const { data: dbSession } = await supabase
-        .from('so_sessions')
-        .insert({
-          session_code: newSession.session_code,
-          category_id: newSession.category_id,
-          user_id: newSession.user_id,
-          status: 'active',
-          start_time: newSession.start_time,
-          total_items: newSession.total_items,
-          counted_items: 0,
-          notes: newSession.notes
-        })
-        .select()
-        .single()
-
-      if (dbSession) {
-        newSession.id = (dbSession as { id: string }).id
-        newSession.items.forEach(i => (i.session_id = newSession.id))
-
-        // Log to audit
-        await supabase.from('audit_logs').insert({
-          action: 'SESSION_CREATED',
-          entity_type: 'SO_SESSION',
-          entity_id: newSession.session_code,
-          after_value: { session_code: newSession.session_code, category: categoryName, officer: officerName }
-        })
-      }
-    } catch (e) {
-      console.warn('Supabase session insert bypassed, persisting locally:', e)
+      notes: isFallbackUnassigned ? (baseNotes + ' [Petugas: Terbuka/Belum Ditugaskan]') : baseNotes,
+      items: finalItems
     }
 
     // Save to local store

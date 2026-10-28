@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
     const newSession = await SessionsRepository.createSession({
       category_id: body.category_id,
       category_name: body.category_name,
-      user_id: body.user_id,
-      officer_name: body.officer_name,
+      user_id: body.user_id && typeof body.user_id === 'string' && body.user_id.trim() !== '' ? body.user_id : null,
+      officer_name: body.officer_name && typeof body.officer_name === 'string' && body.officer_name.trim() !== '' ? body.officer_name : null,
       start_time: body.start_time,
       notes: body.notes
     })

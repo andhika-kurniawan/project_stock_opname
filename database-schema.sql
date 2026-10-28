@@ -55,7 +55,7 @@ CREATE TABLE so_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   session_code TEXT UNIQUE NOT NULL,
   category_id UUID NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL, -- Opsional: NULL menandakan sesi terbuka untuk semua petugas
   status TEXT CHECK (status IN ('active', 'completed', 'cancelled')) DEFAULT 'active',
   start_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   end_time TIMESTAMP WITH TIME ZONE,

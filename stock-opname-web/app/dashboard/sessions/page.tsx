@@ -27,6 +27,7 @@ interface SessionData {
   session_code: string
   category_id?: string
   category_name?: string
+  user_id?: string | null
   status: string
   start_time: string
   total_items: number
@@ -258,13 +259,13 @@ export default function SessionsPage() {
     setCreatingSession(true)
     try {
       const selectedCat = categoryOptions.find(c => c.id === newSessionForm.category_id)
-      const selectedOff = officerOptions.find(o => o.id === newSessionForm.user_id)
+      const selectedOff = newSessionForm.user_id ? officerOptions.find(o => o.id === newSessionForm.user_id) : null
 
       const payload = {
         category_id: newSessionForm.category_id,
         category_name: selectedCat?.name || newSessionForm.category_name,
-        user_id: newSessionForm.user_id,
-        officer_name: selectedOff?.full_name || newSessionForm.officer_name,
+        user_id: newSessionForm.user_id && newSessionForm.user_id.trim() !== '' ? newSessionForm.user_id : null,
+        officer_name: selectedOff?.full_name || null,
         start_time: newSessionForm.start_time ? new Date(newSessionForm.start_time).toISOString() : new Date().toISOString(),
         notes: newSessionForm.notes
       }
@@ -594,7 +595,8 @@ export default function SessionsPage() {
                   : 0
                 const isSelected = session.id === selectedSessionId
                 const categoryName = session.category_name || session.categories?.name || 'Kategori Umum'
-                const officerName = session.officer_name || session.users?.full_name || 'Petugas Lapangan'
+                const isUnassigned = !session.user_id || session.officer_name === 'Belum Ditugaskan' || (!session.officer_name && !session.users?.full_name)
+                const officerName = isUnassigned ? 'Belum Ditugaskan' : (session.officer_name || session.users?.full_name || 'Petugas Lapangan')
 
                 return (
                   <div 
@@ -627,7 +629,16 @@ export default function SessionsPage() {
                       </div>
                       <div className="flex items-center gap-2 text-gray-600 text-xs">
                         <Users className="w-4 h-4 text-gray-400 shrink-0" />
-                        <span className="truncate">Petugas: <strong className="text-gray-900">{officerName}</strong></span>
+                        <span className="truncate flex items-center gap-1.5">
+                          Petugas:{' '}
+                          {isUnassigned ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              Terbuka (Belum Ditugaskan)
+                            </span>
+                          ) : (
+                            <strong className="text-gray-900">{officerName}</strong>
+                          )}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-600 text-xs">
                         <Clock className="w-4 h-4 text-gray-400 shrink-0" />
@@ -691,13 +702,22 @@ export default function SessionsPage() {
             {/* Table Header Section */}
             <div className="p-6 border-b border-gray-150 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#F8FAFC]/40">
               <div>
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2.5">
                   <h3 className="text-lg font-extrabold text-gray-900">
                     Detail Pemindaian Real-Time: <span className="text-[#FF6B35]">#{selectedSession?.session_code}</span>
                   </h3>
                   <span className="bg-orange-100 text-[#FF6B35] px-2.5 py-0.5 rounded-full text-xs font-bold">
                     {selectedSession?.category_name || selectedSession?.categories?.name}
                   </span>
+                  {(!selectedSession?.user_id || selectedSession?.officer_name === 'Belum Ditugaskan' || (!selectedSession?.officer_name && !selectedSession?.users?.full_name)) ? (
+                    <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full text-xs font-bold">
+                      Terbuka (Belum Ditugaskan)
+                    </span>
+                  ) : (
+                    <span className="bg-gray-100 text-gray-700 px-2.5 py-0.5 rounded-full text-xs font-bold">
+                      Petugas: {selectedSession?.officer_name || selectedSession?.users?.full_name}
+                    </span>
+                  )}
                 </div>
                 <p className="text-gray-500 text-xs mt-0.5">
                   Hasil pencocokan stok fisik vs stok sistem secara live. Klik tombol aksi untuk memasukkan hasil hitung manual.
@@ -1038,8 +1058,11 @@ export default function SessionsPage() {
 
               {/* 2. Assign Petugas (Optional PRD) */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Petugas Penanggung Jawab (Opsional)
+                <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center justify-between">
+                  <span>Petugas Penanggung Jawab</span>
+                  <span className="text-[10px] font-bold text-[#FF6B35] bg-orange-50 px-2 py-0.5 rounded border border-orange-200/60">
+                    Opsional
+                  </span>
                 </label>
                 <select
                   value={newSessionForm.user_id}
@@ -1053,13 +1076,16 @@ export default function SessionsPage() {
                   }}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35]/30 cursor-pointer"
                 >
-                  <option value="">-- Pilih Petugas Lapangan --</option>
+                  <option value="">-- Buka untuk Semua Petugas (Belum Ditugaskan) --</option>
                   {officerOptions.map((off) => (
                     <option key={off.id} value={off.id}>
                       {off.full_name} ({off.role === 'admin' ? 'Manager Ops' : 'Petugas SO'})
                     </option>
                   ))}
                 </select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Bila tidak dipilih, sesi akan berstatus terbuka dan langsung muncul di Mobile App untuk dikerjakan petugas shift.
+                </p>
               </div>
 
               {/* 3. Scheduled Date (PRD) */}
