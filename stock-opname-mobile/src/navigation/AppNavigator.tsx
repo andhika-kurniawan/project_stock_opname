@@ -5,6 +5,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { useAuthStore } from '../store/useAuthStore'
 import LoginScreen from '../screens/auth/LoginScreen'
 import HomeScreen from '../screens/main/HomeScreen'
+import ScannerScreen from '../screens/main/ScannerScreen'
+import ReviewScreen from '../screens/main/ReviewScreen'
 import { colors, typography } from '../constants/theme'
 import type { RootStackParamList } from '../types'
 
@@ -41,7 +43,24 @@ export default function AppNavigator() {
         {!isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
         ) : (
-          <Stack.Screen name="Home" component={HomeScreen} />
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen
+              name="Scanner"
+              component={ScannerScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="Review"
+              component={ReviewScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="SessionDetail"
+              component={ReviewScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>
