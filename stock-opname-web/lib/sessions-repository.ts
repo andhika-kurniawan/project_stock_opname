@@ -679,13 +679,35 @@ export class SessionsRepository {
 
     if (productItems.length === 0) {
       const sample = SAMPLE_PRODUCTS_BY_CATEGORY[categoryName] || SAMPLE_PRODUCTS_BY_CATEGORY['Makanan Ringan & Biskuit'] || []
-      productItems = sample.map((p, idx) => ({
-        id: `prod-${Date.now()}-${idx}`,
-        barcode: p.barcode,
-        name: p.name,
-        shelf_location: p.shelf_location,
-        system_stock: p.system_stock
-      }))
+      try {
+        const toSeed = sample.map(p => ({
+          barcode: p.barcode,
+          name: p.name,
+          category_id: categoryId,
+          shelf_location: p.shelf_location,
+          system_stock: p.system_stock,
+          brand: 'Stock Opname'
+        }))
+        const { data: seeded } = await supabase
+          .from('products')
+          .upsert(toSeed, { onConflict: 'barcode' })
+          .select('id, barcode, name, shelf_location, system_stock')
+        if (seeded && seeded.length > 0) {
+          productItems = seeded as typeof productItems
+        }
+      } catch (err) {
+        console.warn('Error auto-seeding category products:', err)
+      }
+
+      if (productItems.length === 0) {
+        productItems = sample.map((p, idx) => ({
+          id: `prod-${Date.now()}-${idx}`,
+          barcode: p.barcode,
+          name: p.name,
+          shelf_location: p.shelf_location,
+          system_stock: p.system_stock
+        }))
+      }
     }
 
     // 4. Generate session code format: SO-YYYYMMDD-XXXX
@@ -758,14 +780,18 @@ export class SessionsRepository {
     if (dbSession) {
       try {
         if (productItems.length > 0) {
-          const soItemsToInsert = productItems.map(p => ({
-            session_id: dbSession!.id,
-            product_id: p.id,
-            system_stock: p.system_stock,
-            physical_stock: null,
-            is_counted: false
-          }))
-          await supabase.from('so_items').insert(soItemsToInsert)
+          const soItemsToInsert = productItems
+            .filter(p => p.id && !p.id.startsWith('prod-'))
+            .map(p => ({
+              session_id: dbSession!.id,
+              product_id: p.id,
+              system_stock: p.system_stock,
+              physical_stock: null,
+              is_counted: false
+            }))
+          if (soItemsToInsert.length > 0) {
+            await supabase.from('so_items').insert(soItemsToInsert)
+          }
         }
 
         // Log audit
@@ -857,7 +883,6 @@ export class SessionsRepository {
         .from('so_items')
         .update({
           physical_stock: physicalCount,
-          variance,
           is_counted: true,
           counted_at: countedAt
         })

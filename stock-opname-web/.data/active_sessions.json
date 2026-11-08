@@ -14,9 +14,9 @@
     "notes": "Sesi stock opname Perawatan Tubuh & Sabun Mandi [Petugas: Terbuka/Belum Ditugaskan]",
     "items": [
       {
-        "id": "item-c64d29a9-46a5-4910-b3d9-bc6fafd848b4-0",
+        "id": "3be940ca-d99c-4db4-8dd4-7a32b75dd042",
         "session_id": "c64d29a9-46a5-4910-b3d9-bc6fafd848b4",
-        "product_id": "prod-1793202719342-0",
+        "product_id": "a0000000-0000-0000-0000-000000000018",
         "barcode": "8992761234701",
         "name": "Sabun Mandi Lifebuoy Total 10 85g",
         "category": "Perawatan Tubuh & Sabun Mandi",
@@ -29,9 +29,9 @@
         "user": "-"
       },
       {
-        "id": "item-c64d29a9-46a5-4910-b3d9-bc6fafd848b4-1",
+        "id": "2ce45f10-39c3-4817-bbbc-4964e3289091",
         "session_id": "c64d29a9-46a5-4910-b3d9-bc6fafd848b4",
-        "product_id": "prod-1793202719342-1",
+        "product_id": "a0000000-0000-0000-0000-000000000019",
         "barcode": "8992761234702",
         "name": "Shampo Pantene Anti Dandruff 290ml",
         "category": "Perawatan Tubuh & Sabun Mandi",
@@ -44,9 +44,9 @@
         "user": "-"
       },
       {
-        "id": "item-c64d29a9-46a5-4910-b3d9-bc6fafd848b4-2",
+        "id": "f4f1aa96-f2e5-43d0-94b5-d14f5f008768",
         "session_id": "c64d29a9-46a5-4910-b3d9-bc6fafd848b4",
-        "product_id": "prod-1793202719342-2",
+        "product_id": "a0000000-0000-0000-0000-000000000020",
         "barcode": "8992761234703",
         "name": "Pasta Gigi Pepsodent 190g",
         "category": "Perawatan Tubuh & Sabun Mandi",

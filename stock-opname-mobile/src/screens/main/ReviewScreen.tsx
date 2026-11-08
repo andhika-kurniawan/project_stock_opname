@@ -97,7 +97,51 @@ export default function ReviewScreen({ route, navigation }: any) {
         .order('is_counted', { ascending: false })
 
       if (itemsErr) throw itemsErr
-      setItems((itemsData || []) as unknown as ItemRecord[])
+
+      let finalItemsData = itemsData || []
+
+      // Self-healing: if session has 0 so_items in Supabase, auto-populate from category products
+      if (finalItemsData.length === 0 && sessData.category_id) {
+        const { data: catProds } = await supabase
+          .from('products')
+          .select('id, system_stock')
+          .eq('category_id', sessData.category_id)
+
+        if (catProds && catProds.length > 0) {
+          const soItemsToInsert = catProds.map((p) => ({
+            session_id: sessionId,
+            product_id: p.id,
+            system_stock: p.system_stock,
+            physical_stock: null,
+            is_counted: false,
+          }))
+
+          await supabase.from('so_items').insert(soItemsToInsert)
+          await supabase.from('so_sessions').update({ total_items: catProds.length }).eq('id', sessionId)
+
+          const { data: refetched } = await supabase
+            .from('so_items')
+            .select(`
+              id,
+              session_id,
+              product_id,
+              system_stock,
+              physical_stock,
+              variance,
+              is_counted,
+              counted_at,
+              products:product_id (id, barcode, name, shelf_location, system_stock)
+            `)
+            .eq('session_id', sessionId)
+            .order('is_counted', { ascending: false })
+
+          if (refetched && refetched.length > 0) {
+            finalItemsData = refetched
+          }
+        }
+      }
+
+      setItems((finalItemsData || []) as unknown as ItemRecord[])
     } catch (err: any) {
       console.error('Error fetching review data:', err)
       Alert.alert('Gagal Memuat Data', err.message || 'Tidak dapat memuat ringkasan sesi.')
@@ -135,7 +179,6 @@ export default function ReviewScreen({ route, navigation }: any) {
         .from('so_items')
         .update({
           physical_stock: countNum,
-          variance,
           is_counted: true,
           counted_at: countedAt,
           counted_by: user?.id || null,

@@ -113,7 +113,6 @@ export default function HomeScreen({ navigation }: any) {
           product_id: p.id,
           system_stock: p.system_stock,
           physical_stock: null,
-          variance: null,
           is_counted: false
         }))
 
